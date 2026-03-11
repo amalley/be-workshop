@@ -116,16 +116,11 @@ func (a *WikiStreamAdapter) consumeStream(ctx context.Context) error {
 				time.Sleep(wait)
 				continue
 			}
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-			return err
+			return a.ctxErr(ctx, err)
 		}
 
 		if err := a.consumeChunk(chunk); err != nil {
-			return nil
+			return a.ctxErr(ctx, err)
 		}
 	}
 }
@@ -145,4 +140,15 @@ func (a *WikiStreamAdapter) consumeChunk(chunk []byte) error {
 
 	a.database.Insert(message.Meta.ID, message.User, message.ServerName, message.Bot)
 	return nil
+}
+
+// ctxErr checks if the context is done before returning the provided err.
+// If the context is done, then the its err is returned instead.
+func (a *WikiStreamAdapter) ctxErr(ctx context.Context, err error) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return err
+	}
 }
