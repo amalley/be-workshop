@@ -62,6 +62,7 @@ func TestWikiStreamAdapterConnect(t *testing.T) {
 	}
 	adapter.Close(ctx) // This close isn't needed, but it's consistant with the adapter pattern
 }
+
 func TestWikiStreamAdapterConume(t *testing.T) {
 	r, w := io.Pipe()
 
@@ -70,16 +71,14 @@ func TestWikiStreamAdapterConume(t *testing.T) {
 	db := database.NewWikiStatsDB()
 	ctx, cancel := context.WithCancel(context.Background())
 
-	data := &models.WikiStreamMessage{}
-	data.Meta = models.WikiStreamMessageMeta{
-		ID: "MockID1",
-	}
-	data.User = "Steve"
-	data.ServerName = "MockServer1"
-	data.Bot = false
-
 	go func() {
-		payload := data
+		payload := &models.WikiStreamMessage{}
+		payload.Meta = models.WikiStreamMessageMeta{
+			ID: "MockID1",
+		}
+		payload.User = "Steve"
+		payload.ServerName = "MockServer1"
+		payload.Bot = false
 
 		b, err := json.Marshal(payload)
 		if err != nil {
@@ -118,15 +117,12 @@ func TestWikiStreamAdapterConume(t *testing.T) {
 	if msg != 1 {
 		t.Errorf("Expected 1 message, got %s", strconv.Itoa(msg))
 	}
-
 	if user != 1 {
 		t.Errorf("Expected 1 user, got %s", strconv.Itoa(user))
 	}
-
 	if bots != 0 {
 		t.Errorf("Expected 0 bots, got %s", strconv.Itoa(bots))
 	}
-
 	if servers != 1 {
 		t.Errorf("Expected 1 server, got %s", strconv.Itoa(servers))
 	}
