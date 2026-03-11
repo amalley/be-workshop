@@ -116,6 +116,11 @@ func (a *WikiStreamAdapter) consumeStream(ctx context.Context) error {
 				time.Sleep(wait)
 				continue
 			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
 			return err
 		}
 
