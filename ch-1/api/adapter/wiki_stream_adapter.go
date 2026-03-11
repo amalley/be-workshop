@@ -19,16 +19,27 @@ import (
 
 var dataTag = []byte("data: ")
 
+// WikiStreamRequestDoer defines the interface of a http request doer - often http.Client
+type WikiStreamRequestDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
 type WikiStreamAdapter struct {
 	stream io.ReadCloser
+	client WikiStreamRequestDoer
 
 	logger   *slog.Logger
 	database *database.WikiStatsDB
-	client   *http.Client
 	url      *url.URL
 }
 
+// NewWikiStreamAdapter returns a new Wiki stream adapter using http.DefaultClient as the underlying request doer.
 func NewWikiStreamAdapter(logger *slog.Logger, database *database.WikiStatsDB) *WikiStreamAdapter {
+	return NewWikiStreamAdapterWithClient(logger, database, http.DefaultClient)
+}
+
+// NewWikiStreamAdapter returns a new Wiki stream adapter using the providered client as the underlying requeust doer.
+func NewWikiStreamAdapterWithClient(logger *slog.Logger, database *database.WikiStatsDB, client WikiStreamRequestDoer) *WikiStreamAdapter {
 	const streamURL = "https://stream.wikimedia.org/v2/stream/recentchange"
 
 	u, err := url.Parse(streamURL)
@@ -39,11 +50,12 @@ func NewWikiStreamAdapter(logger *slog.Logger, database *database.WikiStatsDB) *
 	return &WikiStreamAdapter{
 		logger:   logger,
 		database: database,
-		client:   &http.Client{},
+		client:   client,
 		url:      u,
 	}
 }
 
+// Connect established a connection to the Wiki media stream
 func (a *WikiStreamAdapter) Connect(ctx context.Context) error {
 	a.logger.Info("Connecting to WikiMedia stream...")
 
@@ -65,6 +77,10 @@ func (a *WikiStreamAdapter) Connect(ctx context.Context) error {
 	return nil
 }
 
+// Consume processes the Wiki media stream, consuming messages containing the "data: " tag.
+// Consumed messages are added to the provided WikiStats database given to the adapter on initialization.
+//
+// Returns an error if attempting to consume before connecting to a stream.
 func (a *WikiStreamAdapter) Consume(ctx context.Context) error {
 	if a.stream == nil {
 		return errors.New("Attempting to consume without a connected stream")
@@ -72,6 +88,7 @@ func (a *WikiStreamAdapter) Consume(ctx context.Context) error {
 	return a.consumeStream(ctx)
 }
 
+// Close ensure the stream if closed. Does nothing if the adapter is not connected to a stream.
 func (a *WikiStreamAdapter) Close(ctx context.Context) error {
 	if a.stream == nil {
 		return nil

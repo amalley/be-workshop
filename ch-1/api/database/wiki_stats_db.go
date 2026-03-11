@@ -13,6 +13,13 @@ func (ws WikiStats) Count() int {
 	return len(ws)
 }
 
+func (ws WikiStats) Total(id string) uint64 {
+	if total, exists := ws[id]; exists {
+		return total
+	}
+	return 0
+}
+
 type WikiStatsDB struct {
 	mu sync.Mutex
 
@@ -48,4 +55,20 @@ func (db *WikiStatsDB) Insert(id, user, server string, isBot bool) {
 
 func (db *WikiStatsDB) GetCounts() (int, int, int, int) {
 	return db.messages.Count(), db.users.Count(), db.bots.Count(), db.servers.Count()
+}
+
+func (db *WikiStatsDB) GetMessageTotal(id string) uint64 {
+	return db.messages.Total(id)
+}
+
+func (db *WikiStatsDB) GetUsersTotal(id string) uint64 {
+	return db.messages.Total(id)
+}
+
+func (db *WikiStatsDB) GetBotsTotal(id string) uint64 {
+	return db.bots.Total(id)
+}
+
+func (db *WikiStatsDB) GetServersTotal(id string) uint64 {
+	return db.servers.Total(id)
 }
