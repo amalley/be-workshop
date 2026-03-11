@@ -103,20 +103,14 @@ func (a *WikiStreamAdapter) consumeStream(ctx context.Context) error {
 	reader := bufio.NewReaderSize(a.stream, maxCapacity)
 
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+		// Ensure there hasn't been a context error before continuing
+		if err := a.ctxErr(ctx, nil); err != nil {
+			return err
 		}
 
 		chunk, err := reader.ReadBytes('\n')
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				// We hit the end of the stream, we'll wait a bit then continue.
-				time.Sleep(wait)
-				continue
-			}
-			return a.ctxErr(ctx, err)
+		if cerr := a.ctxErr(ctx, err); cerr != nil {
+			return cerr
 		}
 
 		if err := a.consumeChunk(chunk); err != nil {
