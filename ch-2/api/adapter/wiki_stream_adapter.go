@@ -12,8 +12,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/AMalley/be-workshop/ch-1/api/database"
-	"github.com/AMalley/be-workshop/ch-1/models"
+	"github.com/AMalley/be-workshop/ch-2/api/database"
+	"github.com/AMalley/be-workshop/ch-2/models"
 )
 
 var dataTag = []byte("data: ")
