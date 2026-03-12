@@ -97,8 +97,6 @@ func (s *Server) UseMiddleware(middleware Middleware) {
 // Start begins the core routines for the server - starting the http server, connecting the
 // adapter to its stream, and starting the adapter's consumption loops.
 func (s *Server) Start() {
-	var grp sync.WaitGroup
-
 	// Note: order of task completion is not guaranteed
 
 	// Start the http server
@@ -112,7 +110,7 @@ func (s *Server) Start() {
 	<-s.ctx.Done()
 	s.shutdown()
 
-	grp.Wait()
+	s.tasks.Wait()
 }
 
 // do does a task unless the context has been completed
