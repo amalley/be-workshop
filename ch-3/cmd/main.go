@@ -56,6 +56,14 @@ func getEnv(name string, fallback string) string {
 	return v
 }
 
+func mustGetEnv(name string) string {
+	v, exists := os.LookupEnv(name)
+	if !exists {
+		panic(fmt.Sprintf("missing required env variable: %s", name))
+	}
+	return v
+}
+
 func main() {
 	args := parseArgs()
 
@@ -64,11 +72,12 @@ func main() {
 		Level: parseLogLevel(args.LogLevel),
 	}))
 	db := database.NewWikiStatsDB()
-	adp := adapter.NewWikiStreamAdapter(logger, db, args.URL)
+	syl := adapter.NewScyllaDatabaseAdapter(logger, mustGetEnv("SCYLLA_HOST"))
+	stm := adapter.NewWikiStreamAdapter(logger, db, args.URL)
 	ctl := controller.NewController(logger, db)
 
 	// Create the server and register handlers
-	svr := server.NewServer(logger, adp, args.Port)
+	svr := server.NewServer(logger, stm, syl, args.Port)
 	svr.RegisterHandlers(ctl)
 
 	// Start the server

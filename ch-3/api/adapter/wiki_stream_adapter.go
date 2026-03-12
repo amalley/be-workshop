@@ -14,6 +14,7 @@ import (
 	netUrl "net/url"
 
 	"github.com/AMalley/be-workshop/ch-3/api/database"
+	"github.com/AMalley/be-workshop/ch-3/api/utils"
 	"github.com/AMalley/be-workshop/ch-3/models"
 )
 
@@ -101,17 +102,17 @@ func (a *WikiStreamAdapter) consumeStream(ctx context.Context) error {
 
 	for {
 		// Ensure there hasn't been a context error before continuing
-		if err := a.ctxErr(ctx, nil); err != nil {
+		if err := utils.CtxErr(ctx, nil); err != nil {
 			return err
 		}
 
 		chunk, err := reader.ReadBytes('\n')
-		if cerr := a.ctxErr(ctx, err); cerr != nil {
+		if cerr := utils.CtxErr(ctx, err); cerr != nil {
 			return cerr
 		}
 
 		if err := a.consumeChunk(chunk); err != nil {
-			return a.ctxErr(ctx, err)
+			return utils.CtxErr(ctx, err)
 		}
 	}
 }
@@ -131,15 +132,4 @@ func (a *WikiStreamAdapter) consumeChunk(chunk []byte) error {
 
 	a.database.Insert(message.Meta.ID, message.User, message.ServerName, message.Bot)
 	return nil
-}
-
-// ctxErr checks if the context is done before returning the provided err.
-// If the context is done, then the its err is returned instead.
-func (a *WikiStreamAdapter) ctxErr(ctx context.Context, err error) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-		return err
-	}
 }
