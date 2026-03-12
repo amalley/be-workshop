@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 
 	"github.com/AMalley/be-workshop/ch-3/api/adapter"
 	"github.com/AMalley/be-workshop/ch-3/api/controller"
@@ -58,41 +56,20 @@ func getEnv(name string, fallback string) string {
 	return v
 }
 
-func loadDotEnv() {
-	envFile, err := os.Open(".env")
-	if err != nil {
-		println(fmt.Sprintf("error loading .env: %s", err.Error()))
-		return // We'll log the error and continue, our arguments have fallbacks and this shouldn't kill the application.
-	}
-	defer envFile.Close()
-
-	scanner := bufio.NewScanner(envFile)
-	for scanner.Scan() {
-		line := scanner.Text()
-		kvp := strings.Split(line, "=")
-
-		if len(kvp) != 2 {
-			continue // Malformed .env line, skip it
-		}
-
-		os.Setenv(kvp[0], kvp[1])
-	}
-}
-
 func main() {
-	// loadDotEnv()
-
 	args := parseArgs()
 
+	// Create application components
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: parseLogLevel(args.LogLevel),
 	}))
 	db := database.NewWikiStatsDB()
-
-	// Initialize the server and its components
 	adp := adapter.NewWikiStreamAdapter(logger, db, args.URL)
 	ctl := controller.NewController(logger, db)
-	svr := server.NewServer(logger, ctl, adp, args.Port)
+
+	// Create the server and register handlers
+	svr := server.NewServer(logger, adp, args.Port)
+	svr.RegisterHandlers(ctl)
 
 	// Start the server
 	svr.Start()

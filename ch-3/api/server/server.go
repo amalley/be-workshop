@@ -19,42 +19,47 @@ const (
 	ShutdownTimeout = 10 * time.Second
 )
 
+// Controller defines the interface for the server's handler controller
 type Controller interface {
 	GetStats(writer http.ResponseWriter, req *http.Request)
 	Liveness(writer http.ResponseWriter, req *http.Request)
 }
 
+// StreamAdapter defines the interface for an adapter to connect to and consume a stream
 type StreamAdapter interface {
 	Connect(ctx context.Context) error
 	Consume(ctx context.Context) error
 	Close(ctx context.Context) error
 }
 
+// Middleware defines the signature of a request processor applied to each handler execution
+type Middleware func(next http.Handler) http.Handler
+
+// Server is the main structure of the application.
 type Server struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	controller Controller
-	adapter    StreamAdapter
+	adapter StreamAdapter
 
 	logger *slog.Logger
 	server *http.Server
+	router *http.ServeMux
 
-	port string
+	middleware []Middleware
+	port       string
 }
 
-func NewServer(logger *slog.Logger, controller Controller, adapter StreamAdapter, port string) *Server {
+// NewServer returns a new instance of the WikiStats stream reader server.
+func NewServer(logger *slog.Logger, adapter StreamAdapter, port string) *Server {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
 	router := http.NewServeMux()
-	registerHandlers(router, controller)
-
 	return &Server{
-		ctx:        ctx,
-		cancel:     cancel,
-		controller: controller,
-		adapter:    adapter,
-		logger:     logger,
+		ctx:     ctx,
+		cancel:  cancel,
+		adapter: adapter,
+		logger:  logger,
 		server: &http.Server{
 			Addr:         ":" + port,
 			Handler:      router,
@@ -62,8 +67,21 @@ func NewServer(logger *slog.Logger, controller Controller, adapter StreamAdapter
 			WriteTimeout: WriteTimeout,
 			IdleTimeout:  IdleTimeout,
 		},
-		port: port,
+		router: router,
+		port:   port,
 	}
+}
+
+// RegisterHandlers registers the provided controller to handle the server endpoints
+func (s *Server) RegisterHandlers(controller Controller) {
+	s.router.Handle("/liveness", s.handler(controller.Liveness))
+	s.router.Handle("/stats", s.handler(controller.GetStats))
+}
+
+// Use Middleware registers the provided middleware processor to the server.
+// Middleware is resolved for each handler execution.
+func (s *Server) UseMiddleware(middleware Middleware) {
+	s.middleware = append(s.middleware, middleware)
 }
 
 // Start begins the core routines for the server - starting the http server, connecting the
@@ -126,7 +144,13 @@ func (s *Server) shutdown() {
 	}
 }
 
-func registerHandlers(router *http.ServeMux, controller Controller) {
-	router.HandleFunc("/liveness", controller.Liveness)
-	router.HandleFunc("/stats", controller.GetStats)
+func (s *Server) handler(handlerFunc http.HandlerFunc) http.Handler {
+	var root http.Handler = handlerFunc
+
+	// build the stack from FILO
+	for i := len(s.middleware) - 1; i >= 0; i-- {
+		root = s.middleware[i](root)
+	}
+
+	return root
 }
