@@ -80,7 +80,7 @@ func loadDotEnv() {
 }
 
 func main() {
-	loadDotEnv()
+	// loadDotEnv()
 
 	args := parseArgs()
 

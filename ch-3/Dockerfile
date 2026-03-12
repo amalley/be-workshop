@@ -25,8 +25,8 @@ FROM alpine:latest
 # Set our working directory
 WORKDIR /app
 
-# Copy the binary and .env file from builder stage
-COPY --from=builder /app/wikistats /app/.env ./
+# Copy the binary from build stage
+COPY --from=builder /app/wikistats ./
 
 # Set the entry point as the application
 ENTRYPOINT ["/app/wikistats"]
