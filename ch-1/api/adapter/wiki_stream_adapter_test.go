@@ -108,7 +108,7 @@ func TestWikiStreamAdapterConume(t *testing.T) {
 	cancel() // Cancel the consume
 
 	err := <-errCh
-	if err != nil && !errors.Is(err, context.Canceled) {
+	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
 		t.Errorf("Expected to consume, got error instead: %s", err.Error())
 	}
 

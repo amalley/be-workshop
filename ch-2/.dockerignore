@@ -1,0 +1,9 @@
+# Ignore everything
+*
+
+# Allow only what is needed
+!go.mod
+!go.sum
+!api/
+!cmd/
+!models/

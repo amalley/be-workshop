@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	netUrl "net/url"
 
 	"github.com/AMalley/be-workshop/ch-2/api/database"
 	"github.com/AMalley/be-workshop/ch-2/models"
@@ -33,17 +34,15 @@ type WikiStreamAdapter struct {
 }
 
 // NewWikiStreamAdapter returns a new Wiki stream adapter using http.DefaultClient as the underlying request doer.
-func NewWikiStreamAdapter(logger *slog.Logger, database *database.WikiStatsDB) *WikiStreamAdapter {
-	return NewWikiStreamAdapterWithClient(logger, database, http.DefaultClient)
+func NewWikiStreamAdapter(logger *slog.Logger, database *database.WikiStatsDB, url string) *WikiStreamAdapter {
+	return NewWikiStreamAdapterWithClient(logger, database, http.DefaultClient, url)
 }
 
 // NewWikiStreamAdapter returns a new Wiki stream adapter using the providered client as the underlying requeust doer.
-func NewWikiStreamAdapterWithClient(logger *slog.Logger, database *database.WikiStatsDB, client WikiStreamRequestDoer) *WikiStreamAdapter {
-	const streamURL = "https://stream.wikimedia.org/v2/stream/recentchange"
-
-	u, err := url.Parse(streamURL)
+func NewWikiStreamAdapterWithClient(logger *slog.Logger, database *database.WikiStatsDB, client WikiStreamRequestDoer, url string) *WikiStreamAdapter {
+	u, err := netUrl.Parse(url)
 	if err != nil {
-		panic(fmt.Errorf("fatal: unable to parse stream URL: %s: %s", streamURL, err.Error()))
+		panic(fmt.Errorf("fatal: unable to parse stream URL: %s: %s", url, err.Error()))
 	}
 
 	return &WikiStreamAdapter{
