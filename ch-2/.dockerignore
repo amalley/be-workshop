@@ -4,6 +4,7 @@
 # Allow only what is needed
 !go.mod
 !go.sum
+!.env
 !api/
 !cmd/
 !models/

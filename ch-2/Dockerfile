@@ -13,22 +13,20 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # Now copy everything else (overwritting mod and sum, that's fine) into our working directory
+# Note: the .dockerignore will ensure only what we want copied is allowed to be. You may see warnings in the build log
 COPY . ./
 
 # Finally build our application
-RUN CGO_ENABLED=0 GOOS=linux go build -o wikistats ./cmd/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o wikistats ./cmd/main.go
 
 # Stage 2: Build the minimal runtime image
 FROM alpine:latest
 
-# Set out working directory
+# Set our working directory
 WORKDIR /app
 
-# Copy the binary from builder stage
-COPY --from=builder /app/wikistats .
+# Copy the binary and .env file from builder stage
+COPY --from=builder /app/wikistats /app/.env ./
 
 # Set the entry point as the application
 ENTRYPOINT ["/app/wikistats"]
-
-# Set a default port for the application to listen on (can be overriden with --port when running the image)
-CMD ["--port", "7000"]

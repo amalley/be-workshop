@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -41,10 +40,10 @@ type Server struct {
 	logger *slog.Logger
 	server *http.Server
 
-	port int
+	port string
 }
 
-func NewServer(logger *slog.Logger, controller Controller, adapter StreamAdapter, port int) *Server {
+func NewServer(logger *slog.Logger, controller Controller, adapter StreamAdapter, port string) *Server {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
 	router := http.NewServeMux()
@@ -57,7 +56,7 @@ func NewServer(logger *slog.Logger, controller Controller, adapter StreamAdapter
 		adapter:    adapter,
 		logger:     logger,
 		server: &http.Server{
-			Addr:         ":" + strconv.Itoa(port),
+			Addr:         ":" + port,
 			Handler:      router,
 			ReadTimeout:  ReadTimeout,
 			WriteTimeout: WriteTimeout,
