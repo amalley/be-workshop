@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -12,27 +13,47 @@ import (
 )
 
 type Args struct {
-	Port int
-	URL  string
+	Port     int
+	URL      string
+	LogLevel string
 }
 
 func parseArgs() *Args {
 	args := &Args{
-		Port: 7000,
-		URL:  "https://stream.wikimedia.org/v2/stream/recentchange",
+		Port:     7000,
+		URL:      "https://stream.wikimedia.org/v2/stream/recentchange",
+		LogLevel: "info",
 	}
 
 	flag.IntVar(&args.Port, "port", args.Port, "Port to listen on")
 	flag.StringVar(&args.URL, "url", args.URL, "WikiMedia stream url")
+	flag.StringVar(&args.LogLevel, "log-level", args.LogLevel, "Application's log level (debug, info, warning, error)")
 	flag.Parse()
 
 	return args
 }
 
+func parseLogLevel(level string) slog.Level {
+	switch level {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		panic(fmt.Errorf("unknown log level: %s", level))
+	}
+}
+
 func main() {
 	args := parseArgs()
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: parseLogLevel(args.LogLevel),
+	}))
 	db := database.NewWikiStatsDB()
 
 	// Initialize the server and its components
