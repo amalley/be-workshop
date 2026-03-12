@@ -151,11 +151,15 @@ func (s *Server) connectStream() {
 		return
 	}
 
+	s.do(s.consumeStream)
+}
+
+func (s *Server) consumeStream() {
 	s.logger.Info("Consuming stream...")
 
 	start := time.Now()
 
-	err = s.stream.Consume(s.ctx)
+	err := s.stream.Consume(s.ctx)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		s.logger.Error("Stream adapter failed to consume", slog.Any("err", err), slog.Any("duration", time.Since(start)))
 		s.cancel()
