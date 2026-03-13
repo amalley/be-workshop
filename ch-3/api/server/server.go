@@ -14,7 +14,7 @@ import (
 	"github.com/AMalley/be-workshop/ch-3/api/database"
 	"github.com/AMalley/be-workshop/ch-3/api/middleware"
 	"github.com/AMalley/be-workshop/ch-3/api/stream"
-	"github.com/AMalley/be-workshop/ch-3/utils"
+	"github.com/AMalley/be-workshop/ch-3/api/utils"
 )
 
 const (
