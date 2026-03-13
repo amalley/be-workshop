@@ -2,12 +2,14 @@ package wikistats
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 
 	"github.com/AMalley/be-workshop/ch-3/api/database"
 	"github.com/AMalley/be-workshop/ch-3/models"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type WikiStatsController struct {
@@ -111,5 +113,50 @@ func (c *WikiStatsController) DeleteUser(w http.ResponseWriter, r *http.Request)
 	}
 
 	c.logger.Info("User deleted", slog.String("user", username))
+	w.WriteHeader(http.StatusOK)
+}
+
+// --------------------------------------------------------------------------------------------
+// Login
+// --------------------------------------------------------------------------------------------
+
+func (c *WikiStatsController) Login(w http.ResponseWriter, r *http.Request) {
+	if r.ContentLength == 0 {
+		http.Error(w, "No request body provided", http.StatusBadRequest)
+		return
+	}
+
+	var user models.User
+
+	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+		http.Error(w, "Invalid or missing JSON body", http.StatusBadRequest)
+		return
+	}
+
+	userDB, exists, err := c.database.GetUser(r.Context(), user.Username)
+	if err != nil {
+		c.logger.Error("Failed to login", slog.Any("err", err), slog.String("user", user.Username))
+		http.Error(w, fmt.Sprintf("Internal server error: %s", err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	if !exists {
+		c.logger.Error("Failed to login", slog.String("err", "user not found"), slog.String("user", user.Username))
+		http.Error(w, fmt.Sprintf("User '%s' not found", user.Username), http.StatusNotFound)
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword(userDB.Password, []byte(user.Password)); err != nil {
+		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
+			c.logger.Error("Failed to login", slog.String("err", "Invalid credentials"), slog.String("user", user.Username))
+			http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+			return
+		}
+		c.logger.Error("Failed to login", slog.Any("err", err), slog.String("user", user.Username))
+		http.Error(w, "Failed to login", http.StatusUnauthorized)
+		return
+	}
+
+	c.logger.Info("Login successful", slog.String("user", user.Username))
 	w.WriteHeader(http.StatusOK)
 }

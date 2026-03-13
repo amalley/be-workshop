@@ -16,7 +16,7 @@ type DatabaseAdpater interface {
 	InsertStats(ctx context.Context, stats models.WikiStatsModel) error
 	GetStats(ctx context.Context) (models.WikiStatsCounts, error)
 
-	GetUser(ctx context.Context, username string) (models.User, bool, error)
+	GetUser(ctx context.Context, username string) (models.User_DB, bool, error)
 	CreateUser(ctx context.Context, username, password string) error
 	DeleteUser(ctx context.Context, username string) error
 }

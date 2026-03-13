@@ -102,8 +102,8 @@ func (a *MockDBAdapter) DeleteUser(ctx context.Context, n string) error {
 	return nil
 }
 
-func (a *MockDBAdapter) GetUser(ctx context.Context, n string) (models.User, bool, error) {
-	return models.User{}, false, nil
+func (a *MockDBAdapter) GetUser(ctx context.Context, n string) (models.User_DB, bool, error) {
+	return models.User_DB{}, false, nil
 }
 
 func TestWikiStreamAdapterConnect(t *testing.T) {

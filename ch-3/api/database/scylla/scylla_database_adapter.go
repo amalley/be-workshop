@@ -157,10 +157,10 @@ func (s *ScyllaDatabaseAdapter) DeleteUser(ctx context.Context, username string)
 	return s.session.Query(query, username).WithContext(ctx).Exec()
 }
 
-func (s *ScyllaDatabaseAdapter) GetUser(ctx context.Context, username string) (models.User, bool, error) {
+func (s *ScyllaDatabaseAdapter) GetUser(ctx context.Context, username string) (models.User_DB, bool, error) {
 	const query = `SELECT user_id, username, password, created_on FROM wikistats.users WHERE username = ?`
 
-	var user models.User
+	var user models.User_DB
 	var idStr string
 
 	err := s.session.Query(query, username).WithContext(ctx).Consistency(gocql.One).

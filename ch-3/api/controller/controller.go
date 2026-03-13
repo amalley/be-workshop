@@ -11,6 +11,8 @@ type Controller interface {
 	CreateUser(w http.ResponseWriter, r *http.Request)
 	DeleteUser(w http.ResponseWriter, r *http.Request)
 
+	Login(w http.ResponseWriter, r *http.Request)
+
 	GetStats(w http.ResponseWriter, r *http.Request)
 
 	Liveness(w http.ResponseWriter, r *http.Request)

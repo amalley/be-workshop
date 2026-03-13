@@ -94,15 +94,19 @@ func main() {
 	// Register middleware
 	mdl.Use(panicRecoverMiddleware(lgr))
 	mdl.Use(svr.ContextCancelledMiddleware())
+	// TODO: Add authorization middleware - this will require a user token
 
 	// Register non-middleware dependent endpoints
 	rtr.Handle("GET /liveness", http.HandlerFunc(ctl.Liveness))
 	rtr.Handle("GET /readiness", http.HandlerFunc(ctl.Readiness))
 
-	// Register middleware dependent endpoints
+	// Register authorized middleware dependent endpoints
 	rtr.Handle("GET /stats", mdl.Resolve(http.HandlerFunc(ctl.GetStats)))
 	rtr.Handle("POST /users", mdl.Resolve(http.HandlerFunc(ctl.CreateUser)))
 	rtr.Handle("DELETE /users", mdl.Resolve(http.HandlerFunc(ctl.DeleteUser)))
+
+	// Register login
+	rtr.Handle("POST /login", mdl.Resolve(http.HandlerFunc(ctl.Login)))
 
 	// Start the server
 	svr.Start()

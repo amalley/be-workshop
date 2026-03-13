@@ -6,10 +6,18 @@ import (
 	"github.com/google/uuid"
 )
 
-// User represents an authorized user within up system.
+// User represents a user within up system.
 type User struct {
 	ID        uuid.UUID `json:"id"`
 	Username  string    `json:"username"`
 	Password  string    `json:"password"`
+	CreatedOn time.Time `json:"created_on"`
+}
+
+// User_DB represents a user from the database
+type User_DB struct {
+	ID        uuid.UUID `json:"id"`
+	Username  string    `json:"username"`
+	Password  []byte    `json:"-"`
 	CreatedOn time.Time `json:"created_on"`
 }
