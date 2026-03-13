@@ -97,5 +97,19 @@ func (c *WikiStatsController) CreateUser(w http.ResponseWriter, r *http.Request)
 }
 
 func (c *WikiStatsController) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	username := r.URL.Query().Get("user")
 
+	if username == "" {
+		http.Error(w, "No user query parameter provided", http.StatusBadRequest)
+		return
+	}
+
+	if err := c.database.DeleteUser(r.Context(), username); err != nil {
+		c.logger.Error("Failed to delete user", slog.Any("err", err), slog.String("user", username))
+		http.Error(w, fmt.Sprintf("Failed to delete user: %s", err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	c.logger.Info("User deleted", slog.String("user", username))
+	w.WriteHeader(http.StatusOK)
 }

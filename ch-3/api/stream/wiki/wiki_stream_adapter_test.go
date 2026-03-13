@@ -98,6 +98,10 @@ func (a *MockDBAdapter) CreateUser(ctx context.Context, n, p string) error {
 	return nil
 }
 
+func (a *MockDBAdapter) DeleteUser(ctx context.Context, n string) error {
+	return nil
+}
+
 func (a *MockDBAdapter) GetUser(ctx context.Context, n string) (models.User, bool, error) {
 	return models.User{}, false, nil
 }

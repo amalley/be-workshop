@@ -18,6 +18,7 @@ type DatabaseAdpater interface {
 
 	GetUser(ctx context.Context, username string) (models.User, bool, error)
 	CreateUser(ctx context.Context, username, password string) error
+	DeleteUser(ctx context.Context, username string) error
 }
 
 var _ DatabaseAdpater = &scylla.ScyllaDatabaseAdapter{}

@@ -102,6 +102,7 @@ func main() {
 	// Register middleware dependent endpoints
 	rtr.Handle("GET /stats", mdl.Resolve(http.HandlerFunc(ctl.GetStats)))
 	rtr.Handle("POST /users", mdl.Resolve(http.HandlerFunc(ctl.CreateUser)))
+	rtr.Handle("DELETE /users", mdl.Resolve(http.HandlerFunc(ctl.DeleteUser)))
 
 	// Start the server
 	svr.Start()

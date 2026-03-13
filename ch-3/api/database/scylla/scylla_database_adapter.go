@@ -152,6 +152,11 @@ func (s *ScyllaDatabaseAdapter) CreateUser(ctx context.Context, username, passwo
 	return s.session.Query(query, uuid.New().String(), username, hashedPassword, time.Now().UTC()).WithContext(ctx).Exec()
 }
 
+func (s *ScyllaDatabaseAdapter) DeleteUser(ctx context.Context, username string) error {
+	const query = `DELETE FROM wikistats.users WHERE username = ?`
+	return s.session.Query(query, username).WithContext(ctx).Exec()
+}
+
 func (s *ScyllaDatabaseAdapter) GetUser(ctx context.Context, username string) (models.User, bool, error) {
 	const query = `SELECT user_id, username, password, created_on FROM wikistats.users WHERE username = ?`
 
