@@ -31,6 +31,10 @@ func (s *ScyllaDatabaseAdapter) IsReady() bool {
 	return true
 }
 
-func (s *ScyllaDatabaseAdapter) Insert(stats models.WikiStatsModel) error {
+func (s *ScyllaDatabaseAdapter) InsertStats(stats models.WikiStatsModel) error {
 	return nil
+}
+
+func (s *ScyllaDatabaseAdapter) GetStats() (models.WikiStatsCounts, error) {
+	return models.WikiStatsCounts{}, nil
 }

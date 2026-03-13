@@ -70,25 +70,25 @@ func main() {
 	args := parseArgs()
 
 	// Create application components
-	router := http.NewServeMux()
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	rtr := http.NewServeMux()
+	lgr := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: parseLogLevel(args.LogLevel),
 	}))
-	syl := scylla.NewScyllaDatabaseAdapter(logger, mustGetEnv("SCYLLA_HOST"))
-	stm := wiki.NewWikiStreamAdapter(logger, syl, args.URL)
+	syl := scylla.NewScyllaDatabaseAdapter(lgr, mustGetEnv("SCYLLA_HOST"))
+	stm := wiki.NewWikiStreamAdapter(lgr, syl, args.URL)
 	mdl := middleware.NewMiddlewareRegistry()
-	ctl := wikistats.NewWikiStatsController(logger, syl)
-	svr := server.NewServer(logger, router, stm, syl, args.Port)
+	ctl := wikistats.NewWikiStatsController(lgr, syl)
+	svr := server.NewServer(lgr, rtr, stm, syl, args.Port)
 
 	// Register middleware
 	mdl.Use(svr.ContextCancelledMiddleware())
 
 	// Register non-middleware dependent endpoints
-	router.Handle("GET /liveness", http.HandlerFunc(ctl.Liveness))
-	router.Handle("GET /readiness", http.HandlerFunc(ctl.Readiness))
+	rtr.Handle("GET /liveness", http.HandlerFunc(ctl.Liveness))
+	rtr.Handle("GET /readiness", http.HandlerFunc(ctl.Readiness))
 
 	// Register middleware dependent endpoints
-	router.Handle("GET /stats", mdl.Resolve(http.HandlerFunc(ctl.GetStats)))
+	rtr.Handle("GET /stats", mdl.Resolve(http.HandlerFunc(ctl.GetStats)))
 
 	// Start the server
 	svr.Start()

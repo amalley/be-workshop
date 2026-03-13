@@ -1,10 +1,18 @@
 package wiki
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"strconv"
 	"testing"
+	"time"
+
+	"github.com/AMalley/be-workshop/ch-3/models"
 )
 
 var ErrMockConnectErr = errors.New("Mock Connect Err")
@@ -36,85 +44,138 @@ func (c *MockBufferClient) Do(req *http.Request) (*http.Response, error) {
 	}, nil
 }
 
+type MockDBAdapter struct {
+	messages map[string]struct{}
+	users    map[string]struct{}
+	servers  map[string]struct{}
+	bots     map[string]struct{}
+}
+
+func NewMockDBAdapter() *MockDBAdapter {
+	return &MockDBAdapter{
+		messages: make(map[string]struct{}),
+		users:    make(map[string]struct{}),
+		servers:  make(map[string]struct{}),
+		bots:     make(map[string]struct{}),
+	}
+}
+
+func (a *MockDBAdapter) Connect(ctx context.Context) error {
+	return nil
+}
+
+func (a *MockDBAdapter) Close(ctx context.Context) error {
+	return nil
+}
+
+func (a *MockDBAdapter) IsReady() bool {
+	return true
+}
+
+func (a *MockDBAdapter) InsertStats(stats models.WikiStatsModel) error {
+	a.messages[stats.Message] = struct{}{}
+	a.servers[stats.Server] = struct{}{}
+
+	if stats.IsBot {
+		a.bots[stats.User] = struct{}{}
+	} else {
+		a.users[stats.User] = struct{}{}
+	}
+
+	return nil
+}
+
+func (a *MockDBAdapter) GetStats() (models.WikiStatsCounts, error) {
+	return models.WikiStatsCounts{
+		Messages: len(a.messages),
+		Users:    len(a.users),
+		Servers:  len(a.servers),
+		Bots:     len(a.bots),
+	}, nil
+}
+
 func TestWikiStreamAdapterConnect(t *testing.T) {
-	// logger := slog.New(slog.NewJSONHandler(t.Output(), nil))
-	// db := database.NewWikiStatsDB()
-	// ctx := context.Background()
+	logger := slog.New(slog.NewJSONHandler(t.Output(), nil))
+	ctx := context.Background()
+	db := NewMockDBAdapter()
 
-	// adapter := NewWikiStreamAdapterWithClient(logger, db, &MockClient{}, "https://example.com")
-	// if err := adapter.Connect(ctx); err != nil {
-	// 	t.Errorf("Expected to connect, got error instead: %s", err.Error())
-	// }
-	// adapter.Close(ctx)
+	adapter := NewWikiStreamAdapterWithClient(logger, db, &MockClient{}, "https://example.com")
+	if err := adapter.Connect(ctx); err != nil {
+		t.Errorf("Expected to connect, got error instead: %s", err.Error())
+	}
+	adapter.Close(ctx)
 
-	// adapter = NewWikiStreamAdapterWithClient(logger, db, &MockErrorClient{}, "https://example.com")
-	// if err := adapter.Connect(ctx); err == nil || !errors.Is(err, ErrMockConnectErr) {
-	// 	t.Errorf("Expected error '%s', got '%s'", ErrMockConnectErr.Error(), err.Error())
-	// }
-	// adapter.Close(ctx) // This close isn't needed, but it's consistant with the adapter pattern
+	adapter = NewWikiStreamAdapterWithClient(logger, db, &MockErrorClient{}, "https://example.com")
+	if err := adapter.Connect(ctx); err == nil || !errors.Is(err, ErrMockConnectErr) {
+		t.Errorf("Expected error '%s', got '%s'", ErrMockConnectErr.Error(), err.Error())
+	}
+	adapter.Close(ctx) // This close isn't needed, but it's consistant with the adapter pattern
 }
 
 func TestWikiStreamAdapterConume(t *testing.T) {
-	// r, w := io.Pipe()
+	r, w := io.Pipe()
 
-	// client := &MockBufferClient{buffer: r}
-	// logger := slog.New(slog.NewJSONHandler(t.Output(), nil))
-	// db := database.NewWikiStatsDB()
-	// ctx, cancel := context.WithCancel(context.Background())
+	client := &MockBufferClient{buffer: r}
+	logger := slog.New(slog.NewJSONHandler(t.Output(), nil))
+	ctx, cancel := context.WithCancel(context.Background())
+	db := NewMockDBAdapter()
 
-	// go func() {
-	// 	payload := &models.WikiStreamMessage{}
-	// 	payload.Meta = models.WikiStreamMessageMeta{
-	// 		ID: "MockID1",
-	// 	}
-	// 	payload.User = "Steve"
-	// 	payload.ServerName = "MockServer1"
-	// 	payload.Bot = false
+	go func() {
+		b, err := json.Marshal(&models.WikiStreamMessage{
+			Meta: models.WikiStreamMessageMeta{
+				ID: "MockID1",
+			},
+			User:       "Steve",
+			ServerName: "MockServer1",
+			Bot:        false,
+		})
+		if err != nil {
+			t.Error(err)
+			w.CloseWithError(err)
+			return
+		}
 
-	// 	b, err := json.Marshal(payload)
-	// 	if err != nil {
-	// 		t.Error(err)
-	// 		w.CloseWithError(err)
-	// 		return
-	// 	}
+		fmt.Fprintf(w, "%s%s\n", dataTag, b)
+		w.Close()
+	}()
+	time.Sleep(time.Second / 4) // Wait for work
 
-	// 	fmt.Fprintf(w, "%s%s\n", dataTag, b)
-	// 	w.Close()
-	// }()
-	// time.Sleep(time.Second / 4) // Wait for work
+	adapter := NewWikiStreamAdapterWithClient(logger, db, client, "https://example.com")
+	if err := adapter.Connect(ctx); err != nil {
+		t.Errorf("Expected to connect, got error instead: %s", err.Error())
+	}
 
-	// adapter := NewWikiStreamAdapterWithClient(logger, db, client, "https://example.com")
-	// if err := adapter.Connect(ctx); err != nil {
-	// 	t.Errorf("Expected to connect, got error instead: %s", err.Error())
-	// }
+	errCh := make(chan error, 1)
+	go func() {
+		if err := adapter.Consume(ctx); err != nil {
+			errCh <- err
+		}
+	}()
+	time.Sleep(time.Second / 4) // Wait for work
 
-	// errCh := make(chan error, 1)
-	// go func() {
-	// 	if err := adapter.Consume(ctx); err != nil {
-	// 		errCh <- err
-	// 	}
-	// }()
-	// time.Sleep(time.Second / 4) // Wait for work
+	cancel() // Cancel the consume
 
-	// cancel() // Cancel the consume
+	err := <-errCh
+	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
+		t.Errorf("Expected to consume, got error instead: %s", err.Error())
+	}
 
-	// err := <-errCh
-	// if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
-	// 	t.Errorf("Expected to consume, got error instead: %s", err.Error())
-	// }
+	stats, err := db.GetStats()
 
-	// msg, user, bots, servers := db.GetCounts()
+	if err != nil {
+		t.Errorf("Expected to get stats, got error instead: %s", err.Error())
+	}
 
-	// if msg != 1 {
-	// 	t.Errorf("Expected 1 message, got %s", strconv.Itoa(msg))
-	// }
-	// if user != 1 {
-	// 	t.Errorf("Expected 1 user, got %s", strconv.Itoa(user))
-	// }
-	// if bots != 0 {
-	// 	t.Errorf("Expected 0 bots, got %s", strconv.Itoa(bots))
-	// }
-	// if servers != 1 {
-	// 	t.Errorf("Expected 1 server, got %s", strconv.Itoa(servers))
-	// }
+	if stats.Messages != 1 {
+		t.Errorf("Expected 1 message, got %s", strconv.Itoa(stats.Messages))
+	}
+	if stats.Users != 1 {
+		t.Errorf("Expected 1 user, got %s", strconv.Itoa(stats.Users))
+	}
+	if stats.Bots != 0 {
+		t.Errorf("Expected 0 bots, got %s", strconv.Itoa(stats.Bots))
+	}
+	if stats.Servers != 1 {
+		t.Errorf("Expected 1 server, got %s", strconv.Itoa(stats.Servers))
+	}
 }

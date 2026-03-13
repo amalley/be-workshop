@@ -12,5 +12,6 @@ type DatabaseAdpater interface {
 
 	IsReady() bool
 
-	Insert(stats models.WikiStatsModel) error
+	InsertStats(stats models.WikiStatsModel) error
+	GetStats() (models.WikiStatsCounts, error)
 }

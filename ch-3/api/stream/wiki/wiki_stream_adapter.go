@@ -131,10 +131,10 @@ func (a *WikiStreamAdapter) consumeChunk(chunk []byte) error {
 		return err
 	}
 
-	return a.database.Insert(models.WikiStatsModel{
-		ID:     message.Meta.ID,
-		User:   message.User,
-		Server: message.ServerName,
-		IsBot:  message.Bot,
+	return a.database.InsertStats(models.WikiStatsModel{
+		Message: message.Meta.ID,
+		User:    message.User,
+		Server:  message.ServerName,
+		IsBot:   message.Bot,
 	})
 }
