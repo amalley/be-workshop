@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"runtime/debug"
 
 	"github.com/AMalley/be-workshop/ch-3/api/controller/wikistats"
 	"github.com/AMalley/be-workshop/ch-3/api/database/scylla"
@@ -81,6 +82,7 @@ func main() {
 	svr := server.NewServer(lgr, rtr, stm, syl, args.Port)
 
 	// Register middleware
+	mdl.Use(PanicRecoverMiddleware(lgr))
 	mdl.Use(svr.ContextCancelledMiddleware())
 
 	// Register non-middleware dependent endpoints
@@ -92,4 +94,21 @@ func main() {
 
 	// Start the server
 	svr.Start()
+}
+
+func PanicRecoverMiddleware(logger *slog.Logger) middleware.Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if err := recover(); err != nil {
+					logger.Error("PANIC RECOVER",
+						slog.Any("err", err),
+						slog.String("stack", string(debug.Stack())),
+					)
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+			}()
+			next.ServeHTTP(w, r)
+		})
+	}
 }
