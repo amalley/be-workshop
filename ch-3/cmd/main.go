@@ -86,7 +86,7 @@ func main() {
 	mdl := middleware.NewMiddlewareRegistry()
 
 	// Create application components
-	syl := scylla.NewScyllaDatabaseAdapter(lgr, os.Getenv("SCYLLA_HOST"))
+	syl := scylla.NewScyllaDatabaseAdapter(lgr, os.Getenv("SCYLLA_HOST"), os.Getenv("SCYLLA_KEYSPACE"))
 	ctl := wikistats.NewWikiStatsController(lgr, syl)
 	stm := wiki.NewWikiStreamAdapter(lgr, syl, args.URL)
 	svr := server.NewServer(lgr, rtr, stm, syl, args.Port)
@@ -101,6 +101,7 @@ func main() {
 
 	// Register middleware dependent endpoints
 	rtr.Handle("GET /stats", mdl.Resolve(http.HandlerFunc(ctl.GetStats)))
+	rtr.Handle("POST /users", mdl.Resolve(http.HandlerFunc(ctl.CreateUser)))
 
 	// Start the server
 	svr.Start()

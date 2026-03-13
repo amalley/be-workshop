@@ -72,7 +72,7 @@ func (a *MockDBAdapter) IsReady() bool {
 	return true
 }
 
-func (a *MockDBAdapter) InsertStats(stats models.WikiStatsModel) error {
+func (a *MockDBAdapter) InsertStats(ctx context.Context, stats models.WikiStatsModel) error {
 	a.messages[stats.Message] = struct{}{}
 	a.servers[stats.Server] = struct{}{}
 
@@ -85,13 +85,21 @@ func (a *MockDBAdapter) InsertStats(stats models.WikiStatsModel) error {
 	return nil
 }
 
-func (a *MockDBAdapter) GetStats() (models.WikiStatsCounts, error) {
+func (a *MockDBAdapter) GetStats(ctx context.Context) (models.WikiStatsCounts, error) {
 	return models.WikiStatsCounts{
 		Messages: len(a.messages),
 		Users:    len(a.users),
 		Servers:  len(a.servers),
 		Bots:     len(a.bots),
 	}, nil
+}
+
+func (a *MockDBAdapter) CreateUser(ctx context.Context, n, p string) error {
+	return nil
+}
+
+func (a *MockDBAdapter) GetUser(ctx context.Context, n string) (models.User, bool, error) {
+	return models.User{}, false, nil
 }
 
 func TestWikiStreamAdapterConnect(t *testing.T) {
@@ -160,7 +168,7 @@ func TestWikiStreamAdapterConume(t *testing.T) {
 		t.Errorf("Expected to consume, got error instead: %s", err.Error())
 	}
 
-	stats, err := db.GetStats()
+	stats, err := db.GetStats(ctx)
 
 	if err != nil {
 		t.Errorf("Expected to get stats, got error instead: %s", err.Error())

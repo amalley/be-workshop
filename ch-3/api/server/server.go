@@ -161,9 +161,10 @@ func (s *Server) shutdown() {
 		s.logger.Error("Stream adapter failed to close", slog.Any("err", err))
 	}
 
-	if err := s.database.Close(ctx); err != nil {
-		s.logger.Error("Database adapther failed to close", slog.Any("err", err))
-	}
+	// Scylla is overflowing the stack, fix this later
+	// if err := s.database.Close(ctx); err != nil {
+	// 	s.logger.Error("Database adapther failed to close", slog.Any("err", err))
+	// }
 
 	if err := s.server.Shutdown(ctx); err != nil {
 		s.logger.Error("Server force to shutdown", slog.Any("err", err))

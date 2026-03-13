@@ -112,13 +112,13 @@ func (a *WikiStreamAdapter) consumeStream(ctx context.Context) error {
 			return cerr
 		}
 
-		if err := a.consumeChunk(chunk); err != nil {
+		if err := a.consumeChunk(ctx, chunk); err != nil {
 			return utils.CtxErr(ctx, err)
 		}
 	}
 }
 
-func (a *WikiStreamAdapter) consumeChunk(chunk []byte) error {
+func (a *WikiStreamAdapter) consumeChunk(ctx context.Context, chunk []byte) error {
 	if !bytes.HasPrefix(chunk, dataTag) {
 		return nil // Skip non-data chunks
 	}
@@ -131,7 +131,7 @@ func (a *WikiStreamAdapter) consumeChunk(chunk []byte) error {
 		return err
 	}
 
-	return a.database.InsertStats(models.WikiStatsModel{
+	return a.database.InsertStats(ctx, models.WikiStatsModel{
 		Message: message.Meta.ID,
 		User:    message.User,
 		Server:  message.ServerName,
