@@ -4,12 +4,14 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 
-	"github.com/AMalley/be-workshop/ch-3/api/adapter"
-	"github.com/AMalley/be-workshop/ch-3/api/controller"
-	"github.com/AMalley/be-workshop/ch-3/api/database"
+	"github.com/AMalley/be-workshop/ch-3/api/controller/wikistats"
+	"github.com/AMalley/be-workshop/ch-3/api/database/scylla"
+	"github.com/AMalley/be-workshop/ch-3/api/middleware"
 	"github.com/AMalley/be-workshop/ch-3/api/server"
+	"github.com/AMalley/be-workshop/ch-3/api/stream/wiki"
 )
 
 type Args struct {
@@ -68,17 +70,25 @@ func main() {
 	args := parseArgs()
 
 	// Create application components
+	router := http.NewServeMux()
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: parseLogLevel(args.LogLevel),
 	}))
-	db := database.NewWikiStatsDB()
-	syl := adapter.NewScyllaDatabaseAdapter(logger, mustGetEnv("SCYLLA_HOST"))
-	stm := adapter.NewWikiStreamAdapter(logger, db, args.URL)
-	ctl := controller.NewController(logger, db)
+	syl := scylla.NewScyllaDatabaseAdapter(logger, mustGetEnv("SCYLLA_HOST"))
+	stm := wiki.NewWikiStreamAdapter(logger, syl, args.URL)
+	mdl := middleware.NewMiddlewareRegistry()
+	ctl := wikistats.NewWikiStatsController(logger, syl)
+	svr := server.NewServer(logger, router, stm, syl, args.Port)
 
-	// Create the server and register handlers
-	svr := server.NewServer(logger, stm, syl, args.Port)
-	svr.RegisterHandlers(ctl)
+	// Register middleware
+	mdl.Use(svr.ContextCancelledMiddleware())
+
+	// Register non-middleware dependent endpoints
+	router.Handle("GET /liveness", http.HandlerFunc(ctl.Liveness))
+	router.Handle("GET /readiness", http.HandlerFunc(ctl.Readiness))
+
+	// Register middleware dependent endpoints
+	router.Handle("GET /stats", mdl.Resolve(http.HandlerFunc(ctl.GetStats)))
 
 	// Start the server
 	svr.Start()

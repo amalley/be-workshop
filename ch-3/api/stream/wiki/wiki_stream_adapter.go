@@ -1,4 +1,4 @@
-package adapter
+package wiki
 
 import (
 	"bufio"
@@ -14,8 +14,8 @@ import (
 	netUrl "net/url"
 
 	"github.com/AMalley/be-workshop/ch-3/api/database"
-	"github.com/AMalley/be-workshop/ch-3/api/utils"
 	"github.com/AMalley/be-workshop/ch-3/models"
+	"github.com/AMalley/be-workshop/ch-3/utils"
 )
 
 var dataTag = []byte("data: ")
@@ -29,25 +29,26 @@ type WikiStreamAdapter struct {
 	stream io.ReadCloser
 	client WikiStreamRequestDoer
 
-	logger   *slog.Logger
-	database *database.WikiStatsDB
-	url      *url.URL
+	database database.DatabaseAdpater
+
+	logger *slog.Logger
+	url    *url.URL
 }
 
 // NewWikiStreamAdapter returns a new Wiki stream adapter using http.DefaultClient as the underlying request doer.
-func NewWikiStreamAdapter(logger *slog.Logger, database *database.WikiStatsDB, url string) *WikiStreamAdapter {
+func NewWikiStreamAdapter(logger *slog.Logger, database database.DatabaseAdpater, url string) *WikiStreamAdapter {
 	return NewWikiStreamAdapterWithClient(logger, database, http.DefaultClient, url)
 }
 
 // NewWikiStreamAdapter returns a new Wiki stream adapter using the providered client as the underlying requeust doer.
-func NewWikiStreamAdapterWithClient(logger *slog.Logger, database *database.WikiStatsDB, client WikiStreamRequestDoer, url string) *WikiStreamAdapter {
+func NewWikiStreamAdapterWithClient(logger *slog.Logger, database database.DatabaseAdpater, client WikiStreamRequestDoer, url string) *WikiStreamAdapter {
 	u, err := netUrl.Parse(url)
 	if err != nil {
 		panic(fmt.Errorf("fatal: unable to parse stream URL: %s: %s", url, err.Error()))
 	}
 
 	return &WikiStreamAdapter{
-		logger:   logger,
+		logger:   logger.With(slog.String("src", "WikiStreamAdapter")),
 		database: database,
 		client:   client,
 		url:      u,
@@ -130,6 +131,10 @@ func (a *WikiStreamAdapter) consumeChunk(chunk []byte) error {
 		return err
 	}
 
-	a.database.Insert(message.Meta.ID, message.User, message.ServerName, message.Bot)
-	return nil
+	return a.database.Insert(models.WikiStatsModel{
+		ID:     message.Meta.ID,
+		User:   message.User,
+		Server: message.ServerName,
+		IsBot:  message.Bot,
+	})
 }

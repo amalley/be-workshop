@@ -2,6 +2,7 @@ package models
 
 // Note: Models copied from https://github.com/LauchlanT/wikistats/blob/main/ch-1/pkg/models/message.go (thanks :) )
 
+// WikiStreamMessage is the raw data coming from the wiki stream
 type WikiStreamMessage struct {
 	Schema           string                     `json:"$schema"`
 	Meta             WikiStreamMessageMeta      `json:"meta"`

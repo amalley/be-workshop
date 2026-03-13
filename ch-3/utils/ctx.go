@@ -2,7 +2,7 @@ package utils
 
 import "context"
 
-// ctxErr checks if the context is done before returning the provided err.
+// CtxErr checks if the context is done before returning the provided err.
 // If the context is done, then its err is returned instead.
 func CtxErr(ctx context.Context, err error) error {
 	select {

@@ -11,7 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/AMalley/be-workshop/ch-3/api/utils"
+	"github.com/AMalley/be-workshop/ch-3/api/database"
+	"github.com/AMalley/be-workshop/ch-3/api/middleware"
+	"github.com/AMalley/be-workshop/ch-3/api/stream"
+	"github.com/AMalley/be-workshop/ch-3/utils"
 )
 
 const (
@@ -21,55 +24,30 @@ const (
 	ShutdownTimeout = 10 * time.Second
 )
 
-// Controller defines the interface for the server's handler controller
-type Controller interface {
-	GetStats(writer http.ResponseWriter, req *http.Request)
-	Liveness(writer http.ResponseWriter, req *http.Request)
-}
-
-// StreamAdapter defines the interface for an adapter to connect to and consume a stream
-type StreamAdapter interface {
-	Connect(ctx context.Context) error
-	Consume(ctx context.Context) error
-	Close(ctx context.Context) error
-}
-
-type DatabaseAdapter interface {
-	Connect(ctx context.Context) error
-	Close(ctx context.Context) error
-}
-
-// Middleware defines the signature of a request processor applied to each handler execution
-type Middleware func(next http.Handler) http.Handler
-
 // Server is the main structure of the application.
 type Server struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	stream   StreamAdapter
-	database DatabaseAdapter
+	stream   stream.StreamAdapter
+	database database.DatabaseAdpater
 
 	logger *slog.Logger
 	server *http.Server
-	router *http.ServeMux
 
-	tasks      sync.WaitGroup
-	middleware []Middleware
-	port       string
+	tasks sync.WaitGroup
+	port  string
 }
 
 // NewServer returns a new instance of the WikiStats stream reader server.
-func NewServer(logger *slog.Logger, stream StreamAdapter, database DatabaseAdapter, port string) *Server {
+func NewServer(logger *slog.Logger, router *http.ServeMux, stream stream.StreamAdapter, database database.DatabaseAdpater, port string) *Server {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-
-	router := http.NewServeMux()
 	return &Server{
 		ctx:      ctx,
 		cancel:   cancel,
 		stream:   stream,
 		database: database,
-		logger:   logger,
+		logger:   logger.With(slog.String("src", "Server")),
 		server: &http.Server{
 			Addr:         ":" + port,
 			Handler:      router,
@@ -77,21 +55,32 @@ func NewServer(logger *slog.Logger, stream StreamAdapter, database DatabaseAdapt
 			WriteTimeout: WriteTimeout,
 			IdleTimeout:  IdleTimeout,
 		},
-		router: router,
-		port:   port,
+		port: port,
 	}
 }
 
-// RegisterHandlers registers the provided controller to handle the server endpoints
-func (s *Server) RegisterHandlers(controller Controller) {
-	s.router.Handle("GET /liveness", s.handler(controller.Liveness))
-	s.router.Handle("GET /stats", s.handler(controller.GetStats))
+// ContextCancelledMiddleware ensures handlers are not called if the server context has been cancelled.
+func (s *Server) ContextCancelledMiddleware() middleware.Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if utils.CtxDone(s.ctx) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
-// Use Middleware registers the provided middleware processor to the server.
-// Middleware is resolved for each handler execution.
-func (s *Server) UseMiddleware(middleware Middleware) {
-	s.middleware = append(s.middleware, middleware)
+// Handler is a wrapper http.Handler that ensure requests are handled only if the server context is still alive.
+func (s *Server) Handler(handlerFunc http.HandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if utils.CtxDone(s.ctx) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		handlerFunc.ServeHTTP(w, r)
+	})
 }
 
 // Start begins the core routines for the server - starting the http server, connecting the
@@ -183,15 +172,4 @@ func (s *Server) shutdown() {
 	if err := s.server.Shutdown(ctx); err != nil {
 		s.logger.Error("Server force to shutdown", slog.Any("err", err))
 	}
-}
-
-func (s *Server) handler(handlerFunc http.HandlerFunc) http.Handler {
-	var root http.Handler = handlerFunc
-
-	// build the stack from FILO
-	for i := len(s.middleware) - 1; i >= 0; i-- {
-		root = s.middleware[i](root)
-	}
-
-	return root
 }
