@@ -29,6 +29,8 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s # Give the app a few seconds to boot up
+    networks:
+      - wikistats-networks
     depends_on:
       scylla:
         condition: service_healthy

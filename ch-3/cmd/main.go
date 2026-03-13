@@ -67,36 +67,7 @@ func mustGetEnv(name string) string {
 	return v
 }
 
-func main() {
-	args := parseArgs()
-
-	// Create application components
-	rtr := http.NewServeMux()
-	lgr := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: parseLogLevel(args.LogLevel),
-	}))
-	syl := scylla.NewScyllaDatabaseAdapter(lgr, mustGetEnv("SCYLLA_HOST"))
-	stm := wiki.NewWikiStreamAdapter(lgr, syl, args.URL)
-	mdl := middleware.NewMiddlewareRegistry()
-	ctl := wikistats.NewWikiStatsController(lgr, syl)
-	svr := server.NewServer(lgr, rtr, stm, syl, args.Port)
-
-	// Register middleware
-	mdl.Use(PanicRecoverMiddleware(lgr))
-	mdl.Use(svr.ContextCancelledMiddleware())
-
-	// Register non-middleware dependent endpoints
-	rtr.Handle("GET /liveness", http.HandlerFunc(ctl.Liveness))
-	rtr.Handle("GET /readiness", http.HandlerFunc(ctl.Readiness))
-
-	// Register middleware dependent endpoints
-	rtr.Handle("GET /stats", mdl.Resolve(http.HandlerFunc(ctl.GetStats)))
-
-	// Start the server
-	svr.Start()
-}
-
-func PanicRecoverMiddleware(logger *slog.Logger) middleware.Middleware {
+func panicRecoverMiddleware(logger *slog.Logger) middleware.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
@@ -111,4 +82,34 @@ func PanicRecoverMiddleware(logger *slog.Logger) middleware.Middleware {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func main() {
+	args := parseArgs()
+
+	rtr := http.NewServeMux()
+	lgr := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: parseLogLevel(args.LogLevel),
+	}))
+	mdl := middleware.NewMiddlewareRegistry()
+
+	// Create application components
+	syl := scylla.NewScyllaDatabaseAdapter(lgr, mustGetEnv("SCYLLA_HOST"))
+	ctl := wikistats.NewWikiStatsController(lgr, syl)
+	stm := wiki.NewWikiStreamAdapter(lgr, syl, args.URL)
+	svr := server.NewServer(lgr, rtr, stm, syl, args.Port)
+
+	// Register middleware
+	mdl.Use(panicRecoverMiddleware(lgr))
+	mdl.Use(svr.ContextCancelledMiddleware())
+
+	// Register non-middleware dependent endpoints
+	rtr.Handle("GET /liveness", http.HandlerFunc(ctl.Liveness))
+	rtr.Handle("GET /readiness", http.HandlerFunc(ctl.Readiness))
+
+	// Register middleware dependent endpoints
+	rtr.Handle("GET /stats", mdl.Resolve(http.HandlerFunc(ctl.GetStats)))
+
+	// Start the server
+	svr.Start()
 }
