@@ -21,3 +21,7 @@ type User_DB struct {
 	Password  []byte    `json:"-"`
 	CreatedOn time.Time `json:"created_on"`
 }
+
+type LoginResponse struct {
+	Token string `json:"token"`
+}

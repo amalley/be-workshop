@@ -27,3 +27,9 @@ func (mr *MiddlewareRegistry) Resolve(root http.Handler) http.Handler {
 	}
 	return root
 }
+
+func (mr *MiddlewareRegistry) Clone() *MiddlewareRegistry {
+	stack := make([]Middleware, len(mr.stack))
+	copy(stack, mr.stack)
+	return &MiddlewareRegistry{stack}
+}

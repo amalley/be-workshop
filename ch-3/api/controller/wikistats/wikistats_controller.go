@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/AMalley/be-workshop/ch-3/api/authentication"
 	"github.com/AMalley/be-workshop/ch-3/api/database"
 	"github.com/AMalley/be-workshop/ch-3/models"
 	"golang.org/x/crypto/bcrypt"
@@ -15,10 +16,11 @@ import (
 type WikiStatsController struct {
 	logger *slog.Logger
 
-	database database.DatabaseAdpater
+	database      database.DatabaseAdpater
+	authenticator authentication.Authenticator
 }
 
-func NewWikiStatsController(logger *slog.Logger, database database.DatabaseAdpater) *WikiStatsController {
+func NewWikiStatsController(logger *slog.Logger, database database.DatabaseAdpater, authenticator authentication.Authenticator) *WikiStatsController {
 	return &WikiStatsController{
 		logger:   logger.With(slog.String("src", "WikiStatsController")),
 		database: database,
@@ -142,7 +144,7 @@ func (c *WikiStatsController) Login(w http.ResponseWriter, r *http.Request) {
 
 	if !exists {
 		c.logger.Error("Failed to login", slog.String("err", "user not found"), slog.String("user", user.Username))
-		http.Error(w, fmt.Sprintf("User '%s' not found", user.Username), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("User '%s' not found", user.Username), http.StatusUnauthorized)
 		return
 	}
 
@@ -157,6 +159,19 @@ func (c *WikiStatsController) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	token, err := c.authenticator.GenerateToken(user.Username)
+	if err != nil {
+		c.logger.Error("Failed to login", slog.Any("err", err), slog.String("user", user.Username))
+		http.Error(w, "Failed to login", http.StatusUnauthorized)
+		return
+	}
+
 	c.logger.Info("Login successful", slog.String("user", user.Username))
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+
+	json.NewEncoder(w).Encode(models.LoginResponse{
+		Token: token,
+	})
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime/debug"
 
+	"github.com/AMalley/be-workshop/ch-3/api/authentication/public"
 	"github.com/AMalley/be-workshop/ch-3/api/controller/wikistats"
 	"github.com/AMalley/be-workshop/ch-3/api/database/scylla"
 	"github.com/AMalley/be-workshop/ch-3/api/middleware"
@@ -83,30 +84,34 @@ func main() {
 	lgr := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: parseLogLevel(args.LogLevel),
 	}))
-	mdl := middleware.NewMiddlewareRegistry()
 
 	// Create application components
+	auth := public.NewPublicAuthenticator()
 	syl := scylla.NewScyllaDatabaseAdapter(lgr, os.Getenv("SCYLLA_HOST"), os.Getenv("SCYLLA_KEYSPACE"))
-	ctl := wikistats.NewWikiStatsController(lgr, syl)
+	ctl := wikistats.NewWikiStatsController(lgr, syl, auth)
 	stm := wiki.NewWikiStreamAdapter(lgr, syl, args.URL)
 	svr := server.NewServer(lgr, rtr, stm, syl, args.Port)
 
-	// Register middleware
-	mdl.Use(panicRecoverMiddleware(lgr))
-	mdl.Use(svr.ContextCancelledMiddleware())
-	// TODO: Add authorization middleware - this will require a user token
+	commonMiddleware := middleware.NewMiddlewareRegistry()
+	commonMiddleware.Use(panicRecoverMiddleware(lgr))
+	commonMiddleware.Use(svr.ContextCancelledMiddleware())
+
+	authorizedMiddleware := commonMiddleware.Clone()
+	authorizedMiddleware.Use(auth.AuthorizationMiddleware())
+
+	// Note: There are some holes with who can do what and when.. fix this if production bound.
 
 	// Register non-middleware dependent endpoints
 	rtr.Handle("GET /liveness", http.HandlerFunc(ctl.Liveness))
 	rtr.Handle("GET /readiness", http.HandlerFunc(ctl.Readiness))
 
-	// Register authorized middleware dependent endpoints
-	rtr.Handle("GET /stats", mdl.Resolve(http.HandlerFunc(ctl.GetStats)))
-	rtr.Handle("POST /users", mdl.Resolve(http.HandlerFunc(ctl.CreateUser)))
-	rtr.Handle("DELETE /users", mdl.Resolve(http.HandlerFunc(ctl.DeleteUser)))
-
 	// Register login
-	rtr.Handle("POST /login", mdl.Resolve(http.HandlerFunc(ctl.Login)))
+	rtr.Handle("POST /login", commonMiddleware.Resolve(http.HandlerFunc(ctl.Login)))
+	rtr.Handle("POST /users", commonMiddleware.Resolve(http.HandlerFunc(ctl.CreateUser)))
+
+	// Register authorized middleware dependent endpoints
+	rtr.Handle("GET /stats", authorizedMiddleware.Resolve(http.HandlerFunc(ctl.GetStats)))
+	rtr.Handle("DELETE /users", authorizedMiddleware.Resolve(http.HandlerFunc(ctl.DeleteUser))) // Should be admin authorizated
 
 	// Start the server
 	svr.Start()
