@@ -2,6 +2,7 @@ package scylla
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -24,6 +25,10 @@ func NewScyllaDatabaseAdapter(logger *slog.Logger, host string) *ScyllaDatabaseA
 }
 
 func (s *ScyllaDatabaseAdapter) Connect(ctx context.Context) error {
+	if s.host == "" {
+		return errors.New("No Scylla host provided")
+	}
+
 	retry := time.NewTicker(5 * time.Second)
 	defer retry.Stop()
 

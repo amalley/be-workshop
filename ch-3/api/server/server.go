@@ -86,12 +86,11 @@ func (s *Server) Handler(handlerFunc http.HandlerFunc) http.Handler {
 // Start begins the core routines for the server - starting the http server, connecting the
 // adapter to its stream, and starting the adapter's consumption loops.
 func (s *Server) Start() {
-	// Ensure we can establish a connection to the database, this might take some time
 	s.do(s.connectDatabase)
-	s.tasks.Wait()
+	s.tasks.Wait() // We'll wait for the database connection to be establisted first.
 
-	s.do(s.connectStream)
 	s.do(s.startServer)
+	s.do(s.connectStream)
 
 	<-s.ctx.Done()
 	s.shutdown()
