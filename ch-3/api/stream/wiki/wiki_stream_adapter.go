@@ -29,19 +29,19 @@ type WikiStreamAdapter struct {
 	stream io.ReadCloser
 	client WikiStreamRequestDoer
 
-	database database.DatabaseAdpater
+	database database.DatabaseAdapter
 
 	logger *slog.Logger
 	url    *url.URL
 }
 
 // NewWikiStreamAdapter returns a new Wiki stream adapter using http.DefaultClient as the underlying request doer.
-func NewWikiStreamAdapter(logger *slog.Logger, database database.DatabaseAdpater, url string) *WikiStreamAdapter {
+func NewWikiStreamAdapter(logger *slog.Logger, database database.DatabaseAdapter, url string) *WikiStreamAdapter {
 	return NewWikiStreamAdapterWithClient(logger, database, http.DefaultClient, url)
 }
 
 // NewWikiStreamAdapter returns a new Wiki stream adapter using the providered client as the underlying requeust doer.
-func NewWikiStreamAdapterWithClient(logger *slog.Logger, database database.DatabaseAdpater, client WikiStreamRequestDoer, url string) *WikiStreamAdapter {
+func NewWikiStreamAdapterWithClient(logger *slog.Logger, database database.DatabaseAdapter, client WikiStreamRequestDoer, url string) *WikiStreamAdapter {
 	u, err := netUrl.Parse(url)
 	if err != nil {
 		panic(fmt.Errorf("fatal: unable to parse stream URL: %s: %s", url, err.Error()))

@@ -5,9 +5,10 @@ import (
 
 	"github.com/AMalley/be-workshop/ch-3/api/database/scylla"
 	"github.com/AMalley/be-workshop/ch-3/models"
+	"github.com/gocql/gocql"
 )
 
-type DatabaseAdpater interface {
+type DatabaseAdapter interface {
 	Connect(ctx context.Context) error
 	Close(ctx context.Context) error
 
@@ -18,9 +19,9 @@ type DatabaseAdpater interface {
 
 	GetUser(ctx context.Context, username string) (models.User_DB, bool, error)
 	CreateUser(ctx context.Context, username, password string) error
-	DeleteUser(ctx context.Context, username string) error
+	DeleteUser(ctx context.Context, userID gocql.UUID) error
 
-	GetUserByID(ctx context.Context, userID string) (models.User_DB, bool, error)
+	GetUserByID(ctx context.Context, userID gocql.UUID) (models.User_DB, bool, error)
 }
 
-var _ DatabaseAdpater = &scylla.ScyllaDatabaseAdapter{}
+var _ DatabaseAdapter = &scylla.ScyllaDatabaseAdapter{}

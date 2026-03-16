@@ -24,14 +24,14 @@ type WikiStatsController struct {
 	logger *slog.Logger
 
 	stream        stream.StreamAdapter
-	database      database.DatabaseAdpater
+	database      database.DatabaseAdapter
 	authenticator authentication.Authenticator
 }
 
 func NewWikiStatsController(
 	logger *slog.Logger,
 	stream stream.StreamAdapter,
-	database database.DatabaseAdpater,
+	database database.DatabaseAdapter,
 	authenticator authentication.Authenticator) *WikiStatsController {
 	return &WikiStatsController{
 		logger:        logger.With(slog.String("src", "WikiStatsController")),
@@ -68,7 +68,13 @@ func (c *WikiStatsController) GetCtxLogger(ctx context.Context) *slog.Logger {
 }
 
 func (c *WikiStatsController) VerifyPublicUser(sub string) bool {
-	_, exists, err := c.database.GetUserByID(context.Background(), sub)
+	userID, err := gocql.ParseUUID(sub)
+	if err != nil {
+		c.logger.Error("Failed to parse user ID from token subject", slog.Any("err", err), slog.String("sub", sub))
+		return false
+	}
+
+	_, exists, err := c.database.GetUserByID(context.Background(), userID)
 	if err != nil {
 		c.logger.Error("Failed to get user by ID", slog.Any("err", err), slog.String("user_id", sub))
 		return false
@@ -92,7 +98,7 @@ func (c *WikiStatsController) VerifyPublicUser(sub string) bool {
 // Middleware
 // --------------------------------------------------------------------------------------------
 
-func (c *WikiStatsController) DatabaseReadinessMiddleware(database database.DatabaseAdpater) middleware.Middleware {
+func (c *WikiStatsController) DatabaseReadinessMiddleware(database database.DatabaseAdapter) middleware.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !database.IsReady() {
@@ -278,13 +284,26 @@ func (c *WikiStatsController) DeleteUser(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := c.database.DeleteUser(r.Context(), username); err != nil {
-		logger.Error("Failed to delete user", slog.Any("err", err), slog.String("user", username))
+	userDB, exists, err := c.database.GetUser(r.Context(), username)
+	if err != nil {
+		logger.Error("Failed to get user", slog.Any("err", err), slog.String("user", username))
+		http.Error(w, fmt.Sprintf("Failed to get user: %s", err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	if !exists {
+		logger.Error("Failed to delete user", slog.String("err", "user not found"), slog.String("user", username))
+		http.Error(w, fmt.Sprintf("User '%s' not found", username), http.StatusNotFound)
+		return
+	}
+
+	if err := c.database.DeleteUser(r.Context(), userDB.ID); err != nil {
+		logger.Error("Failed to delete user", slog.Any("err", err), slog.String("user", username), slog.String("user_id", userDB.ID.String()))
 		http.Error(w, fmt.Sprintf("Failed to delete user: %s", err.Error()), http.StatusInternalServerError)
 		return
 	}
 
-	logger.Info("User deleted", slog.String("user", username))
+	logger.Info("User deleted", slog.String("user", username), slog.String("user_id", userDB.ID.String()))
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -331,7 +350,7 @@ func (c *WikiStatsController) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := c.authenticator.GenerateToken(userDB.ID)
+	token, err := c.authenticator.GenerateToken(userDB.ID.String())
 	if err != nil {
 		logger.Error("Failed to login", slog.Any("err", err), slog.String("user", user.Username))
 		http.Error(w, "Failed to login", http.StatusUnauthorized)

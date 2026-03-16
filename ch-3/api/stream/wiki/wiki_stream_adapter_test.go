@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/AMalley/be-workshop/ch-3/models"
+	"github.com/gocql/gocql"
 )
 
 var ErrMockConnectErr = errors.New("Mock Connect Err")
@@ -98,7 +99,7 @@ func (a *MockDBAdapter) CreateUser(ctx context.Context, n, p string) error {
 	return nil
 }
 
-func (a *MockDBAdapter) DeleteUser(ctx context.Context, n string) error {
+func (a *MockDBAdapter) DeleteUser(ctx context.Context, n gocql.UUID) error {
 	return nil
 }
 
@@ -106,7 +107,7 @@ func (a *MockDBAdapter) GetUser(ctx context.Context, n string) (models.User_DB, 
 	return models.User_DB{}, false, nil
 }
 
-func (a *MockDBAdapter) GetUserByID(ctx context.Context, userID string) (models.User_DB, bool, error) {
+func (a *MockDBAdapter) GetUserByID(ctx context.Context, userID gocql.UUID) (models.User_DB, bool, error) {
 	return models.User_DB{}, false, nil
 }
 

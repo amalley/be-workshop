@@ -2,6 +2,8 @@ package models
 
 import (
 	"time"
+
+	"github.com/gocql/gocql"
 )
 
 // User represents a user of the application
@@ -13,10 +15,10 @@ type User struct {
 
 // User_DB represents a user from the database
 type User_DB struct {
-	ID        string    `json:"id"`
-	Username  string    `json:"username"`
-	Password  []byte    `json:"-"`
-	CreatedOn time.Time `json:"created_on"`
+	ID        gocql.UUID `json:"id"`
+	Username  string     `json:"username"`
+	Password  []byte     `json:"-"`
+	CreatedOn time.Time  `json:"created_on"`
 }
 
 type LoginResponse struct {

@@ -12,8 +12,10 @@ import (
 )
 
 const (
+	KeyspaceQuery = `CREATE KEYSPACE IF NOT EXISTS wikistats WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}`
+
 	UsersTable = `CREATE TABLE IF NOT EXISTS wikistats.users (
-        user_id text,
+        user_id uuid,
         username text,
         password text,
         created_on timestamp,
@@ -25,10 +27,19 @@ const (
 		WHERE username IS NOT NULL AND user_id IS NOT NULL
 		PRIMARY KEY (username, user_id);`
 
-	StatsTable = `CREATE TABLE IF NOT EXISTS wikistats.global_counts (
-		stat_type text PRIMARY KEY,
-		stat_value counter
-	);`
+	StatsTable = `CREATE TABLE IF NOT EXISTS wikistats.stats (
+		stat_type text,
+		time_bucket timestamp,
+		stat_value counter,
+		PRIMARY KEY (stat_type, time_bucket)
+	) WITH CLUSTERING ORDER BY (time_bucket DESC);`
+)
+
+const (
+	MessagesStat = "messages"
+	UsersStat    = "users"
+	BotsStat     = "bots"
+	ServersStat  = "servers"
 )
 
 type ScyllaDatabaseAdapter struct {
@@ -116,24 +127,20 @@ func (s *ScyllaDatabaseAdapter) tryConnent(ctx context.Context) error {
 }
 
 func (s *ScyllaDatabaseAdapter) tryCreateKeyspace(ctx context.Context) error {
-	const ksquery = `CREATE KEYSPACE IF NOT EXISTS wikistats WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}`
-
-	if err := s.session.Query(ksquery).WithContext(ctx).Exec(); err != nil {
-		return nil
+	queries := []string{
+		KeyspaceQuery,
+		UsersTable,
+		UsernameIndex,
+		StatsTable,
 	}
 
-	if err := s.session.Query(UsersTable).WithContext(ctx).Exec(); err != nil {
-		return nil
+	for _, query := range queries {
+		if err := s.session.Query(query).WithContext(ctx).Exec(); err != nil {
+			return err
+		}
 	}
 
-	if err := s.session.Query(UsernameIndex).WithContext(ctx).Exec(); err != nil {
-		return nil
-	}
-
-	if err := s.session.Query(StatsTable).WithContext(ctx).Exec(); err != nil {
-		return nil
-	}
-
+	s.logger.Info("Scylla keyspace and tables ensured")
 	return nil
 }
 
@@ -142,51 +149,49 @@ func (s *ScyllaDatabaseAdapter) tryCreateKeyspace(ctx context.Context) error {
 // --------------------------------------------------------------------------------------------
 
 func (s *ScyllaDatabaseAdapter) InsertStats(ctx context.Context, stats models.WikiStatsModel) error {
-	const query = `UPDATE wikistats.global_counts SET stat_value = stat_value + 1 WHERE stat_type = ?`
+	const query = `UPDATE wikistats.stats SET stat_value = stat_value + 1 WHERE stat_type = ? AND time_bucket = ?`
 
-	if err := s.session.Query(query, "messages").WithContext(ctx).Exec(); err != nil {
+	now := time.Now().UTC().Truncate(time.Minute)
+
+	if err := s.session.Query(query, MessagesStat, now).WithContext(ctx).Exec(); err != nil {
 		return err
 	}
 
+	label := UsersStat
 	if stats.IsBot {
-		if err := s.session.Query(query, "bots").WithContext(ctx).Exec(); err != nil {
-			return err
-		}
-	} else {
-		if err := s.session.Query(query, "users").WithContext(ctx).Exec(); err != nil {
-			return err
-		}
+		label = BotsStat
 	}
 
-	return s.session.Query(query, "servers").WithContext(ctx).Exec()
+	if err := s.session.Query(query, label, now).WithContext(ctx).Exec(); err != nil {
+		return err
+	}
+
+	return s.session.Query(query, ServersStat, now).WithContext(ctx).Exec()
 }
 
 func (s *ScyllaDatabaseAdapter) GetStats(ctx context.Context) (models.WikiStatsCounts, error) {
-	const query = `SELECT stat_type, stat_value FROM wikistats.global_counts`
+	const query = `SELECT stat_type, SUM(stat_value) FROM wikistats.stats GROUP BY stat_type`
 
 	var stats models.WikiStatsCounts
 	var statType string
-	var statValue int
+	var total int64
 
 	iter := s.session.Query(query).WithContext(ctx).Iter()
-	for iter.Scan(&statType, &statValue) {
+	for iter.Scan(&statType, &total) {
+		val := int(total)
 		switch statType {
-		case "messages":
-			stats.Messages = statValue
-		case "users":
-			stats.Users = statValue
-		case "bots":
-			stats.Bots = statValue
-		case "servers":
-			stats.Servers = statValue
+		case MessagesStat:
+			stats.Messages = val
+		case UsersStat:
+			stats.Users = val
+		case BotsStat:
+			stats.Bots = val
+		case ServersStat:
+			stats.Servers = val
 		}
 	}
 
-	if err := iter.Close(); err != nil {
-		return models.WikiStatsCounts{}, err
-	}
-
-	return stats, nil
+	return stats, iter.Close()
 }
 
 // --------------------------------------------------------------------------------------------
@@ -202,10 +207,10 @@ func (s *ScyllaDatabaseAdapter) CreateUser(ctx context.Context, username, passwo
 	}
 
 	uid := gocql.TimeUUID()
-	return s.session.Query(query, uid.String(), username, hashedPassword, time.Now().UTC()).WithContext(ctx).Exec()
+	return s.session.Query(query, uid, username, hashedPassword, time.Now().UTC()).WithContext(ctx).Exec()
 }
 
-func (s *ScyllaDatabaseAdapter) DeleteUser(ctx context.Context, userID string) error {
+func (s *ScyllaDatabaseAdapter) DeleteUser(ctx context.Context, userID gocql.UUID) error {
 	const query = `DELETE FROM wikistats.users WHERE user_id = ?`
 	return s.session.Query(query, userID).WithContext(ctx).Exec()
 }
@@ -228,7 +233,7 @@ func (s *ScyllaDatabaseAdapter) GetUser(ctx context.Context, username string) (m
 	return user, true, nil
 }
 
-func (s *ScyllaDatabaseAdapter) GetUserByID(ctx context.Context, userID string) (models.User_DB, bool, error) {
+func (s *ScyllaDatabaseAdapter) GetUserByID(ctx context.Context, userID gocql.UUID) (models.User_DB, bool, error) {
 	const query = `SELECT user_id, username, password, created_on FROM wikistats.users WHERE user_id = ?`
 
 	var user models.User_DB
