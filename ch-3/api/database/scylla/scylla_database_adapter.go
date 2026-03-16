@@ -8,18 +8,22 @@ import (
 
 	"github.com/AMalley/be-workshop/ch-3/models"
 	"github.com/gocql/gocql"
-	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
 const (
 	UsersTable = `CREATE TABLE IF NOT EXISTS wikistats.users (
-        user_id uuid,
+        user_id text,
         username text,
         password text,
         created_on timestamp,
-        PRIMARY KEY (username)
+        PRIMARY KEY (user_id)
     )`
+
+	UsernameIndex = `CREATE MATERIALIZED VIEW IF NOT EXISTS wikistats.users_by_username AS
+		SELECT * FROM wikistats.users
+		WHERE username IS NOT NULL AND user_id IS NOT NULL
+		PRIMARY KEY (username, user_id);`
 
 	StatsTable = `CREATE TABLE IF NOT EXISTS wikistats.global_counts (
 		stat_type text PRIMARY KEY,
@@ -66,7 +70,11 @@ func (s *ScyllaDatabaseAdapter) Close(ctx context.Context) error {
 	if s.session == nil {
 		return nil
 	}
-	return s.Close(ctx)
+
+	s.session.Close()
+	s.session = nil
+
+	return nil
 }
 
 func (s *ScyllaDatabaseAdapter) IsReady() bool {
@@ -115,6 +123,10 @@ func (s *ScyllaDatabaseAdapter) tryCreateKeyspace(ctx context.Context) error {
 	}
 
 	if err := s.session.Query(UsersTable).WithContext(ctx).Exec(); err != nil {
+		return nil
+	}
+
+	if err := s.session.Query(UsernameIndex).WithContext(ctx).Exec(); err != nil {
 		return nil
 	}
 
@@ -189,22 +201,22 @@ func (s *ScyllaDatabaseAdapter) CreateUser(ctx context.Context, username, passwo
 		return err
 	}
 
-	return s.session.Query(query, uuid.New().String(), username, hashedPassword, time.Now().UTC()).WithContext(ctx).Exec()
+	uid := gocql.TimeUUID()
+	return s.session.Query(query, uid.String(), username, hashedPassword, time.Now().UTC()).WithContext(ctx).Exec()
 }
 
-func (s *ScyllaDatabaseAdapter) DeleteUser(ctx context.Context, username string) error {
-	const query = `DELETE FROM wikistats.users WHERE username = ?`
-	return s.session.Query(query, username).WithContext(ctx).Exec()
+func (s *ScyllaDatabaseAdapter) DeleteUser(ctx context.Context, userID string) error {
+	const query = `DELETE FROM wikistats.users WHERE user_id = ?`
+	return s.session.Query(query, userID).WithContext(ctx).Exec()
 }
 
 func (s *ScyllaDatabaseAdapter) GetUser(ctx context.Context, username string) (models.User_DB, bool, error) {
-	const query = `SELECT user_id, username, password, created_on FROM wikistats.users WHERE username = ?`
+	const query = `SELECT user_id, username, password, created_on FROM wikistats.users_by_username WHERE username = ?`
 
 	var user models.User_DB
-	var idStr string
 
 	err := s.session.Query(query, username).WithContext(ctx).Consistency(gocql.One).
-		Scan(&idStr, &user.Username, &user.Password, &user.CreatedOn)
+		Scan(&user.ID, &user.Username, &user.Password, &user.CreatedOn)
 
 	if err != nil {
 		if errors.Is(err, gocql.ErrNotFound) {
@@ -213,6 +225,23 @@ func (s *ScyllaDatabaseAdapter) GetUser(ctx context.Context, username string) (m
 		return user, false, err
 	}
 
-	user.ID, _ = uuid.Parse(idStr)
+	return user, true, nil
+}
+
+func (s *ScyllaDatabaseAdapter) GetUserByID(ctx context.Context, userID string) (models.User_DB, bool, error) {
+	const query = `SELECT user_id, username, password, created_on FROM wikistats.users WHERE user_id = ?`
+
+	var user models.User_DB
+
+	err := s.session.Query(query, userID).WithContext(ctx).Consistency(gocql.One).
+		Scan(&user.ID, &user.Username, &user.Password, &user.CreatedOn)
+
+	if err != nil {
+		if errors.Is(err, gocql.ErrNotFound) {
+			return user, false, nil
+		}
+		return user, false, err
+	}
+
 	return user, true, nil
 }

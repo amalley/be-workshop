@@ -6,7 +6,7 @@ import (
 )
 
 type Authenticator interface {
-	AuthorizationMiddleware() middleware.Middleware
+	AuthenticationMiddleware(subVerify func(sub string) bool) middleware.Middleware
 	GenerateToken(sub string) (string, error)
 }
 

@@ -106,6 +106,10 @@ func (a *MockDBAdapter) GetUser(ctx context.Context, n string) (models.User_DB, 
 	return models.User_DB{}, false, nil
 }
 
+func (a *MockDBAdapter) GetUserByID(ctx context.Context, userID string) (models.User_DB, bool, error) {
+	return models.User_DB{}, false, nil
+}
+
 func TestWikiStreamAdapterConnect(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(t.Output(), nil))
 	ctx := context.Background()

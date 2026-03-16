@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/AMalley/be-workshop/ch-3/api/authentication"
 	"github.com/AMalley/be-workshop/ch-3/api/database"
@@ -15,6 +16,7 @@ import (
 	"github.com/AMalley/be-workshop/ch-3/api/stream"
 	"github.com/AMalley/be-workshop/ch-3/api/utils"
 	"github.com/AMalley/be-workshop/ch-3/models"
+	"github.com/gocql/gocql"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -40,17 +42,22 @@ func NewWikiStatsController(
 }
 
 func (c *WikiStatsController) RegisterRoutes(mux *http.ServeMux) {
+	// Unauthenticated routes
 	mux.Handle("GET /health/liveness", http.HandlerFunc(c.Liveness))
 	mux.Handle("GET /health/readiness", http.HandlerFunc(c.Readiness))
+	mux.Handle("POST /login", http.HandlerFunc(c.Login))
 
 	mdl := middleware.NewMiddlewareRegistry()
-	mdl.Use(c.authenticator.AuthorizationMiddleware())
 	mdl.Use(c.DatabaseReadinessMiddleware(c.database))
+	mdl.Use(c.authenticator.AuthenticationMiddleware(c.VerifyPublicUser))
 
+	// Note: OnStartup adds an admin/password test user.
+	// To create first "real" user, login as admin. Typically, this would be done through a separate admin API, but now this is fine.
+
+	// Authenticated routes
 	mux.Handle("GET /stats", mdl.Resolve(http.HandlerFunc(c.GetStats)))
-	mux.Handle("POST /user/create", mdl.Resolve(http.HandlerFunc(c.CreateUser)))
-	mux.Handle("DELETE /user/delete", mdl.Resolve(http.HandlerFunc(c.DeleteUser)))
-	mux.Handle("POST /login", mdl.Resolve(http.HandlerFunc(c.Login)))
+	mux.Handle("POST /users", mdl.Resolve(http.HandlerFunc(c.CreateUser)))
+	mux.Handle("DELETE /users", mdl.Resolve(http.HandlerFunc(c.DeleteUser)))
 }
 
 func (c *WikiStatsController) GetCtxLogger(ctx context.Context) *slog.Logger {
@@ -58,6 +65,27 @@ func (c *WikiStatsController) GetCtxLogger(ctx context.Context) *slog.Logger {
 		return logger.With(slog.String("src", "WikiStatsController"))
 	}
 	return c.logger
+}
+
+func (c *WikiStatsController) VerifyPublicUser(sub string) bool {
+	_, exists, err := c.database.GetUserByID(context.Background(), sub)
+	if err != nil {
+		c.logger.Error("Failed to get user by ID", slog.Any("err", err), slog.String("user_id", sub))
+		return false
+	}
+
+	_, err = gocql.ParseUUID(sub)
+	if err != nil {
+		c.logger.Error("Failed to parse user ID from token subject", slog.Any("err", err), slog.String("sub", sub))
+		return false
+	}
+
+	if !exists {
+		c.logger.Info("User not found for token subject", slog.String("user_id", sub))
+		return false
+	}
+
+	return true
 }
 
 // --------------------------------------------------------------------------------------------
@@ -100,9 +128,29 @@ func (c *WikiStatsController) OnStartup(ctx context.Context) error {
 	})
 	grp.Wait()
 
+	// We'll give the database a few seconds to be ready.
+	wait := time.NewTicker(time.Second * 10)
+	defer wait.Stop()
+
+	for !c.database.IsReady() {
+		c.logger.Info("Waiting for database to be ready...")
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-wait.C:
+		}
+	}
+
 	if c.database.IsReady() {
-		if err := c.database.CreateUser(ctx, "admin", "password"); err != nil {
-			c.logger.Error("Failed to create default user", slog.Any("err", err))
+		_, exists, err := c.database.GetUser(ctx, "admin")
+		if err != nil {
+			c.logger.Error("Failed to get default user", slog.Any("err", err))
+		}
+		if !exists {
+			// Don't do this in production
+			if err := c.database.CreateUser(ctx, "admin", "password"); err != nil {
+				c.logger.Error("Failed to create default user", slog.Any("err", err))
+			}
 		}
 	}
 
@@ -126,10 +174,9 @@ func (c *WikiStatsController) OnShutdown(ctx context.Context) error {
 		c.logger.Error("Failed to close stream", slog.Any("err", err))
 	}
 
-	// Scylla currently overflows the stack when closing. This needs investigation.
-	// if err := c.database.Close(ctx); err != nil {
-	// 	c.logger.Error("Failed to close database", slog.Any("err", err))
-	// }
+	if err := c.database.Close(ctx); err != nil {
+		c.logger.Error("Failed to close database", slog.Any("err", err))
+	}
 
 	return nil
 }
@@ -284,7 +331,7 @@ func (c *WikiStatsController) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := c.authenticator.GenerateToken(user.Username)
+	token, err := c.authenticator.GenerateToken(userDB.ID)
 	if err != nil {
 		logger.Error("Failed to login", slog.Any("err", err), slog.String("user", user.Username))
 		http.Error(w, "Failed to login", http.StatusUnauthorized)
