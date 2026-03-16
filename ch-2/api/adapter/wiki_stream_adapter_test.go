@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AMalley/be-workshop/ch-1/api/database"
-	"github.com/AMalley/be-workshop/ch-1/models"
+	"github.com/AMalley/be-workshop/ch-2/api/database"
+	"github.com/AMalley/be-workshop/ch-2/models"
 )
 
 var ErrMockConnectErr = errors.New("Mock Connect Err")
@@ -50,13 +50,13 @@ func TestWikiStreamAdapterConnect(t *testing.T) {
 	db := database.NewWikiStatsDB()
 	ctx := context.Background()
 
-	adapter := NewWikiStreamAdapterWithClient(logger, db, &MockClient{})
+	adapter := NewWikiStreamAdapterWithClient(logger, db, &MockClient{}, "https://example.com")
 	if err := adapter.Connect(ctx); err != nil {
 		t.Errorf("Expected to connect, got error instead: %s", err.Error())
 	}
 	adapter.Close(ctx)
 
-	adapter = NewWikiStreamAdapterWithClient(logger, db, &MockErrorClient{})
+	adapter = NewWikiStreamAdapterWithClient(logger, db, &MockErrorClient{}, "https://example.com")
 	if err := adapter.Connect(ctx); err == nil || !errors.Is(err, ErrMockConnectErr) {
 		t.Errorf("Expected error '%s', got '%s'", ErrMockConnectErr.Error(), err.Error())
 	}
@@ -92,7 +92,7 @@ func TestWikiStreamAdapterConume(t *testing.T) {
 	}()
 	time.Sleep(time.Second / 4) // Wait for work
 
-	adapter := NewWikiStreamAdapterWithClient(logger, db, client)
+	adapter := NewWikiStreamAdapterWithClient(logger, db, client, "https://example.com")
 	if err := adapter.Connect(ctx); err != nil {
 		t.Errorf("Expected to connect, got error instead: %s", err.Error())
 	}
