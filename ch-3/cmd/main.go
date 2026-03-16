@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/AMalley/be-workshop/ch-3/api/authentication/public"
 	"github.com/AMalley/be-workshop/ch-3/api/controller/wikistats"
@@ -16,6 +17,7 @@ import (
 	"github.com/AMalley/be-workshop/ch-3/api/middleware"
 	"github.com/AMalley/be-workshop/ch-3/api/server"
 	"github.com/AMalley/be-workshop/ch-3/api/stream/wiki"
+	"github.com/gocql/gocql"
 )
 
 type Args struct {
@@ -77,7 +79,14 @@ func main() {
 	mdl.Use(middleware.RequestLogger(lgr))
 	mdl.Use(middleware.PanicRecover(lgr))
 
-	syl := scylla.NewScyllaDatabaseAdapter(lgr, os.Getenv("SCYLLA_HOST"), os.Getenv("SCYLLA_KEYSPACE"))
+	syl := scylla.NewScyllaDatabaseAdapter(lgr,
+		scylla.WithHost("scylla"),
+		scylla.WithKeyspace("wikistats"),
+		scylla.WithClusterConsistency(gocql.Quorum),
+		scylla.WithConnectionTimeout(5*time.Second),
+		scylla.WithRetryTime(5*time.Second),
+	)
+
 	stm := wiki.NewWikiStreamAdapter(lgr, syl, args.URL)
 	pub := public.NewPublicAuthenticator()
 

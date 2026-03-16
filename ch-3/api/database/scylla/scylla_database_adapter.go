@@ -34,24 +34,22 @@ const (
 type ScyllaDatabaseAdapter struct {
 	logger  *slog.Logger
 	session *gocql.Session
-
-	host     string
-	keyspace string
+	cfg     *ScyllaOptions
 }
 
-func NewScyllaDatabaseAdapter(logger *slog.Logger, host, keyspace string) *ScyllaDatabaseAdapter {
+func NewScyllaDatabaseAdapter(logger *slog.Logger, opts ...ScyllaOption) *ScyllaDatabaseAdapter {
+	cfg := applyOptions(defaultOptions(), opts...)
 	return &ScyllaDatabaseAdapter{
-		logger:   logger.With(slog.String("src", "ScyllaDatabaseAdapter")),
-		host:     host,
-		keyspace: keyspace,
+		logger: logger.With(slog.String("src", "ScyllaDatabaseAdapter")),
+		cfg:    cfg,
 	}
 }
 
 func (s *ScyllaDatabaseAdapter) Connect(ctx context.Context) error {
-	if s.host == "" {
+	if s.cfg.Host == "" {
 		return errors.New("No Scylla host provided")
 	}
-	if s.keyspace == "" {
+	if s.cfg.Keyspace == "" {
 		return errors.New("No Scylla keyspace provided")
 	}
 
@@ -82,7 +80,7 @@ func (s *ScyllaDatabaseAdapter) IsReady() bool {
 }
 
 func (s *ScyllaDatabaseAdapter) tryConnent(ctx context.Context) error {
-	retry := time.NewTicker(5 * time.Second)
+	retry := time.NewTicker(s.cfg.RetryTime)
 	defer retry.Stop()
 
 	for {
@@ -93,11 +91,13 @@ func (s *ScyllaDatabaseAdapter) tryConnent(ctx context.Context) error {
 			return ctx.Err()
 
 		case <-retry.C:
-			cluster := gocql.NewCluster(s.host)
-			cluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(gocql.RoundRobinHostPolicy())
+			cluster := gocql.NewCluster(s.cfg.Host)
 
-			cluster.Consistency = gocql.Quorum
-			cluster.ConnectTimeout = 5 * time.Second
+			cluster.PoolConfig.HostSelectionPolicy = s.cfg.HostSelectPolicy
+			cluster.DisableInitialHostLookup = s.cfg.DisableInitialHostLookup
+			cluster.Consistency = s.cfg.ClusterConsistency
+			cluster.ConnectTimeout = s.cfg.ConnectionTimeout
+
 			cluster.RetryPolicy = &gocql.ExponentialBackoffRetryPolicy{
 				NumRetries: 3,
 			}
