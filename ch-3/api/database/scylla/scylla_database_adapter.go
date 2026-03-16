@@ -130,11 +130,51 @@ func (s *ScyllaDatabaseAdapter) tryCreateKeyspace(ctx context.Context) error {
 // --------------------------------------------------------------------------------------------
 
 func (s *ScyllaDatabaseAdapter) InsertStats(ctx context.Context, stats models.WikiStatsModel) error {
-	return nil
+	const query = `UPDATE wikistats.global_counts SET stat_value = stat_value + 1 WHERE stat_type = ?`
+
+	if err := s.session.Query(query, "messages").WithContext(ctx).Exec(); err != nil {
+		return err
+	}
+
+	if stats.IsBot {
+		if err := s.session.Query(query, "bots").WithContext(ctx).Exec(); err != nil {
+			return err
+		}
+	} else {
+		if err := s.session.Query(query, "users").WithContext(ctx).Exec(); err != nil {
+			return err
+		}
+	}
+
+	return s.session.Query(query, "servers").WithContext(ctx).Exec()
 }
 
 func (s *ScyllaDatabaseAdapter) GetStats(ctx context.Context) (models.WikiStatsCounts, error) {
-	return models.WikiStatsCounts{}, nil
+	const query = `SELECT stat_type, stat_value FROM wikistats.global_counts`
+
+	var stats models.WikiStatsCounts
+	var statType string
+	var statValue int
+
+	iter := s.session.Query(query).WithContext(ctx).Iter()
+	for iter.Scan(&statType, &statValue) {
+		switch statType {
+		case "messages":
+			stats.Messages = statValue
+		case "users":
+			stats.Users = statValue
+		case "bots":
+			stats.Bots = statValue
+		case "servers":
+			stats.Servers = statValue
+		}
+	}
+
+	if err := iter.Close(); err != nil {
+		return models.WikiStatsCounts{}, err
+	}
+
+	return stats, nil
 }
 
 // --------------------------------------------------------------------------------------------

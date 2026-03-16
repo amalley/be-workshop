@@ -112,8 +112,10 @@ func (a *WikiStreamAdapter) consumeStream(ctx context.Context) error {
 			return cerr
 		}
 
-		if err := a.consumeChunk(ctx, chunk); err != nil {
-			return utils.CtxErr(ctx, err)
+		if a.database.IsReady() {
+			if err := a.consumeChunk(ctx, chunk); err != nil {
+				return utils.CtxErr(ctx, err)
+			}
 		}
 	}
 }

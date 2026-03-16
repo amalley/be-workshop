@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
-	"runtime/debug"
+	"os/signal"
+	"syscall"
 
 	"github.com/AMalley/be-workshop/ch-3/api/authentication/public"
 	"github.com/AMalley/be-workshop/ch-3/api/controller/wikistats"
@@ -60,59 +62,33 @@ func getEnv(name string, fallback string) string {
 	return v
 }
 
-func panicRecoverMiddleware(logger *slog.Logger) middleware.Middleware {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer func() {
-				if err := recover(); err != nil {
-					logger.Error("PANIC RECOVER",
-						slog.Any("err", err),
-						slog.String("stack", string(debug.Stack())),
-					)
-					w.WriteHeader(http.StatusInternalServerError)
-				}
-			}()
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
 func main() {
 	args := parseArgs()
 
-	rtr := http.NewServeMux()
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	mux := http.NewServeMux()
 	lgr := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: parseLogLevel(args.LogLevel),
 	}))
 
-	// Create application components
-	auth := public.NewPublicAuthenticator()
+	mdl := middleware.NewMiddlewareRegistry()
+	mdl.Use(middleware.RequestLogger(lgr))
+	mdl.Use(middleware.PanicRecover(lgr))
+
 	syl := scylla.NewScyllaDatabaseAdapter(lgr, os.Getenv("SCYLLA_HOST"), os.Getenv("SCYLLA_KEYSPACE"))
-	ctl := wikistats.NewWikiStatsController(lgr, syl, auth)
 	stm := wiki.NewWikiStreamAdapter(lgr, syl, args.URL)
-	svr := server.NewServer(lgr, rtr, stm, syl, args.Port)
+	pub := public.NewPublicAuthenticator()
 
-	commonMiddleware := middleware.NewMiddlewareRegistry()
-	commonMiddleware.Use(panicRecoverMiddleware(lgr))
-	commonMiddleware.Use(svr.ContextCancelledMiddleware())
+	ctl := wikistats.NewWikiStatsController(lgr, stm, syl, pub)
+	ctl.RegisterRoutes(mux)
 
-	authorizedMiddleware := commonMiddleware.Clone()
-	authorizedMiddleware.Use(auth.AuthorizationMiddleware())
-
-	// Note: There are some holes with who can do what and when.. fix this if production bound.
-
-	// Register non-middleware dependent endpoints
-	rtr.Handle("GET /liveness", http.HandlerFunc(ctl.Liveness))
-	rtr.Handle("GET /readiness", http.HandlerFunc(ctl.Readiness))
-
-	// Register login
-	rtr.Handle("POST /login", commonMiddleware.Resolve(http.HandlerFunc(ctl.Login)))
-	rtr.Handle("POST /users", commonMiddleware.Resolve(http.HandlerFunc(ctl.CreateUser)))
-
-	// Register authorized middleware dependent endpoints
-	rtr.Handle("GET /stats", authorizedMiddleware.Resolve(http.HandlerFunc(ctl.GetStats)))
-	rtr.Handle("DELETE /users", authorizedMiddleware.Resolve(http.HandlerFunc(ctl.DeleteUser))) // Should be admin authorizated
-
-	// Start the server
-	svr.Start()
+	server.NewServer(
+		server.WithAddress(":"+args.Port),
+		server.WithHandler(mdl.Resolve(mux)),
+		server.WithLogger(lgr),
+		server.WithStartupHook(ctl.OnStartup),
+		server.WithShutdownHook(ctl.OnShutdown),
+	).Run(ctx)
 }
