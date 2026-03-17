@@ -2,9 +2,9 @@ package controller
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/AMalley/be-workshop/ch-3/api/controller/wikistats"
+	"github.com/AMalley/be-workshop/ch-3/models"
 )
 
 // Controller defines the interface for the server's handler controller
@@ -20,27 +20,26 @@ type Controller interface {
 	// Health
 	// --------------------------------------------------------------------------------------------
 
-	Liveness(w http.ResponseWriter, r *http.Request)
-	Readiness(w http.ResponseWriter, r *http.Request)
+	Liveness(*models.RequestCtx)
 
 	// --------------------------------------------------------------------------------------------
 	// User
 	// --------------------------------------------------------------------------------------------
 
-	CreateUser(w http.ResponseWriter, r *http.Request)
-	DeleteUser(w http.ResponseWriter, r *http.Request)
+	CreateUser(*models.RequestCtx)
+	DeleteUser(*models.RequestCtx)
 
 	// --------------------------------------------------------------------------------------------
 	// Stats
 	// --------------------------------------------------------------------------------------------
 
-	GetStats(w http.ResponseWriter, r *http.Request)
+	GetStats(*models.RequestCtx)
 
 	// --------------------------------------------------------------------------------------------
 	// Login
 	// --------------------------------------------------------------------------------------------
 
-	Login(w http.ResponseWriter, r *http.Request)
+	Login(*models.RequestCtx)
 }
 
 var _ Controller = &wikistats.WikiStatsController{}

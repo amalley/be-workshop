@@ -77,7 +77,6 @@ func main() {
 	}))
 
 	mdl := middleware.NewMiddlewareRegistry()
-	mdl.Use(middleware.RequestLogger(lgr))
 	mdl.Use(middleware.PanicRecover(lgr))
 
 	syl := scylla.NewScyllaDatabaseAdapter(lgr,
