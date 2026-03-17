@@ -1,15 +1,16 @@
 package middleware
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
+
+	"github.com/AMalley/be-workshop/ch-3/api/utils"
 )
 
 func RequestLogger(logger *slog.Logger) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := context.WithValue(r.Context(), "logger", logger.With(
+			ctx := utils.SetCtxLogger(r.Context(), logger.With(
 				"method", r.Method,
 				"path", r.URL.Path,
 			))

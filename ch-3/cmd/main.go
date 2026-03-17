@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -87,7 +88,13 @@ func main() {
 		scylla.WithRetryTime(5*time.Second),
 	)
 
-	stm := wiki.NewWikiStreamAdapter(lgr, syl, args.URL)
+	u, err := url.Parse(args.URL)
+	if err != nil {
+		lgr.Error("fatal: unable to parse stream URL", "url", args.URL, "error", err.Error())
+		os.Exit(1)
+	}
+
+	stm := wiki.NewWikiStreamAdapter(lgr, syl, u)
 	pub := public.NewPublicAuthenticator()
 
 	ctl := wikistats.NewWikiStatsController(lgr, stm, syl, pub)

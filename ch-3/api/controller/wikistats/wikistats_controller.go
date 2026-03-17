@@ -45,14 +45,17 @@ func (c *WikiStatsController) RegisterRoutes(mux *http.ServeMux) {
 	// Unauthenticated routes
 	mux.Handle("GET /health/liveness", http.HandlerFunc(c.Liveness))
 	mux.Handle("GET /health/readiness", http.HandlerFunc(c.Readiness))
-	mux.Handle("POST /login", http.HandlerFunc(c.Login))
 
 	mdl := middleware.NewMiddlewareRegistry()
 	mdl.Use(c.DatabaseReadinessMiddleware(c.database))
-	mdl.Use(c.authenticator.AuthenticationMiddleware(c.VerifyPublicUser))
+
+	// Database dependent routes
+	mux.Handle("POST /login", http.HandlerFunc(c.Login))
 
 	// Note: OnStartup adds an admin/password test user.
-	// To create first "real" user, login as admin. Typically, this would be done through a separate admin API, but now this is fine.
+	// To create the first "real" user, login as admin. Typically, this would be done through a separate admin API, but this is fine for now.
+
+	mdl.Use(c.authenticator.AuthenticationMiddleware(c.VerifyPublicUser))
 
 	// Authenticated routes
 	mux.Handle("GET /stats", mdl.Resolve(http.HandlerFunc(c.GetStats)))
@@ -61,7 +64,7 @@ func (c *WikiStatsController) RegisterRoutes(mux *http.ServeMux) {
 }
 
 func (c *WikiStatsController) GetCtxLogger(ctx context.Context) *slog.Logger {
-	if logger, ok := ctx.Value("logger").(*slog.Logger); ok {
+	if logger, ok := utils.GetCtxLogger(ctx); ok {
 		return logger.With(slog.String("src", "WikiStatsController"))
 	}
 	return c.logger
@@ -134,10 +137,10 @@ func (c *WikiStatsController) OnStartup(ctx context.Context) error {
 	})
 	grp.Wait()
 
-	// We'll give the database a few seconds to be ready.
-	wait := time.NewTicker(time.Second * 10)
+	wait := time.NewTicker(time.Second * 2)
 	defer wait.Stop()
 
+	// Ensure the database infrastructure is ready before we start consuming the stream
 	for !c.database.IsReady() {
 		c.logger.Info("Waiting for database to be ready...")
 		select {
@@ -147,16 +150,15 @@ func (c *WikiStatsController) OnStartup(ctx context.Context) error {
 		}
 	}
 
-	if c.database.IsReady() {
-		_, exists, err := c.database.GetUser(ctx, "admin")
-		if err != nil {
-			c.logger.Error("Failed to get default user", slog.Any("err", err))
-		}
-		if !exists {
-			// Don't do this in production
-			if err := c.database.CreateUser(ctx, "admin", "password"); err != nil {
-				c.logger.Error("Failed to create default user", slog.Any("err", err))
-			}
+	_, exists, err := c.database.GetUser(ctx, "admin")
+	if err != nil {
+		c.logger.Error("Failed to get default user", slog.Any("err", err))
+	}
+
+	if !exists {
+		// Don't do this in production
+		if err := c.database.CreateUser(ctx, "admin", "password"); err != nil {
+			c.logger.Error("Failed to create default user", slog.Any("err", err))
 		}
 	}
 
@@ -172,9 +174,11 @@ func (c *WikiStatsController) OnStartup(ctx context.Context) error {
 
 func (c *WikiStatsController) OnShutdown(ctx context.Context) error {
 	if utils.CtxDone(ctx) {
-		c.logger.Info("failed to stop stream", slog.String("reason", ctx.Err().Error()))
+		c.logger.Info("failed to shutdown", slog.String("reason", ctx.Err().Error()))
 		return ctx.Err()
 	}
+
+	// Note: We don't return errors here to avoid interrupting shutdown, but we do log them.
 
 	if err := c.stream.Close(ctx); err != nil {
 		c.logger.Error("Failed to close stream", slog.Any("err", err))
@@ -193,7 +197,9 @@ func (c *WikiStatsController) OnShutdown(ctx context.Context) error {
 
 func (c *WikiStatsController) Liveness(w http.ResponseWriter, r *http.Request) {
 	c.GetCtxLogger(r.Context()).Info("We're alive!")
+
 	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
 }
 
 func (c *WikiStatsController) Readiness(w http.ResponseWriter, r *http.Request) {
@@ -206,7 +212,9 @@ func (c *WikiStatsController) Readiness(w http.ResponseWriter, r *http.Request) 
 	}
 
 	logger.Info("We're ready!")
+
 	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
 }
 
 // --------------------------------------------------------------------------------------------
@@ -230,7 +238,15 @@ func (c *WikiStatsController) GetStats(w http.ResponseWriter, r *http.Request) {
 		slog.Int("servers", stats.Servers),
 	)
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+
+	json.NewEncoder(w).Encode(models.GetStatsResponse{
+		Messages: stats.Messages,
+		Users:    stats.Users,
+		Bots:     stats.Bots,
+		Servers:  stats.Servers,
+	})
 }
 
 // --------------------------------------------------------------------------------------------
@@ -245,7 +261,7 @@ func (c *WikiStatsController) CreateUser(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var newUser models.User
+	var newUser models.CreateUserRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&newUser); err != nil {
 		http.Error(w, "Invalid or missing JSON body", http.StatusBadRequest)
@@ -272,7 +288,9 @@ func (c *WikiStatsController) CreateUser(w http.ResponseWriter, r *http.Request)
 	}
 
 	logger.Info("User created", slog.String("user", newUser.Username))
+
 	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte("OK"))
 }
 
 func (c *WikiStatsController) DeleteUser(w http.ResponseWriter, r *http.Request) {
@@ -304,7 +322,9 @@ func (c *WikiStatsController) DeleteUser(w http.ResponseWriter, r *http.Request)
 	}
 
 	logger.Info("User deleted", slog.String("user", username), slog.String("user_id", userDB.ID.String()))
+
 	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
 }
 
 // --------------------------------------------------------------------------------------------
@@ -319,45 +339,45 @@ func (c *WikiStatsController) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var user models.User
+	var login models.LoginRequest
 
-	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&login); err != nil {
 		http.Error(w, "Invalid or missing JSON body", http.StatusBadRequest)
 		return
 	}
 
-	userDB, exists, err := c.database.GetUser(r.Context(), user.Username)
+	userDB, exists, err := c.database.GetUser(r.Context(), login.Username)
 	if err != nil {
-		logger.Error("Failed to login", slog.Any("err", err), slog.String("user", user.Username))
+		logger.Error("Failed to login", slog.Any("err", err), slog.String("user", login.Username))
 		http.Error(w, fmt.Sprintf("Internal server error: %s", err.Error()), http.StatusInternalServerError)
 		return
 	}
 
 	if !exists {
-		logger.Error("Failed to login", slog.String("err", "user not found"), slog.String("user", user.Username))
-		http.Error(w, fmt.Sprintf("User '%s' not found", user.Username), http.StatusUnauthorized)
+		logger.Error("Failed to login", slog.String("err", "user not found"), slog.String("user", login.Username))
+		http.Error(w, fmt.Sprintf("User '%s' not found", login.Username), http.StatusUnauthorized)
 		return
 	}
 
-	if err := bcrypt.CompareHashAndPassword(userDB.Password, []byte(user.Password)); err != nil {
+	if err := bcrypt.CompareHashAndPassword(userDB.Password, []byte(login.Password)); err != nil {
 		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
-			logger.Error("Failed to login", slog.String("err", "Invalid credentials"), slog.String("user", user.Username))
+			logger.Error("Failed to login", slog.String("err", "Invalid credentials"), slog.String("user", login.Username))
 			http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 			return
 		}
-		logger.Error("Failed to login", slog.Any("err", err), slog.String("user", user.Username))
+		logger.Error("Failed to login", slog.Any("err", err), slog.String("user", login.Username))
 		http.Error(w, "Failed to login", http.StatusUnauthorized)
 		return
 	}
 
 	token, err := c.authenticator.GenerateToken(userDB.ID.String())
 	if err != nil {
-		logger.Error("Failed to login", slog.Any("err", err), slog.String("user", user.Username))
+		logger.Error("Failed to login", slog.Any("err", err), slog.String("user", login.Username))
 		http.Error(w, "Failed to login", http.StatusUnauthorized)
 		return
 	}
 
-	logger.Info("Login successful", slog.String("user", user.Username))
+	logger.Info("Login successful", slog.String("user", login.Username))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

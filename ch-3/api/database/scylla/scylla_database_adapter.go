@@ -215,10 +215,10 @@ func (s *ScyllaDatabaseAdapter) DeleteUser(ctx context.Context, userID gocql.UUI
 	return s.session.Query(query, userID).WithContext(ctx).Exec()
 }
 
-func (s *ScyllaDatabaseAdapter) GetUser(ctx context.Context, username string) (models.User_DB, bool, error) {
+func (s *ScyllaDatabaseAdapter) GetUser(ctx context.Context, username string) (models.User, bool, error) {
 	const query = `SELECT user_id, username, password, created_on FROM wikistats.users_by_username WHERE username = ?`
 
-	var user models.User_DB
+	var user models.User
 
 	err := s.session.Query(query, username).WithContext(ctx).Consistency(gocql.One).
 		Scan(&user.ID, &user.Username, &user.Password, &user.CreatedOn)
@@ -233,10 +233,10 @@ func (s *ScyllaDatabaseAdapter) GetUser(ctx context.Context, username string) (m
 	return user, true, nil
 }
 
-func (s *ScyllaDatabaseAdapter) GetUserByID(ctx context.Context, userID gocql.UUID) (models.User_DB, bool, error) {
+func (s *ScyllaDatabaseAdapter) GetUserByID(ctx context.Context, userID gocql.UUID) (models.User, bool, error) {
 	const query = `SELECT user_id, username, password, created_on FROM wikistats.users WHERE user_id = ?`
 
-	var user models.User_DB
+	var user models.User
 
 	err := s.session.Query(query, userID).WithContext(ctx).Consistency(gocql.One).
 		Scan(&user.ID, &user.Username, &user.Password, &user.CreatedOn)

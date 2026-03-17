@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"testing"
 	"time"
@@ -103,12 +104,12 @@ func (a *MockDBAdapter) DeleteUser(ctx context.Context, n gocql.UUID) error {
 	return nil
 }
 
-func (a *MockDBAdapter) GetUser(ctx context.Context, n string) (models.User_DB, bool, error) {
-	return models.User_DB{}, false, nil
+func (a *MockDBAdapter) GetUser(ctx context.Context, n string) (models.User, bool, error) {
+	return models.User{}, false, nil
 }
 
-func (a *MockDBAdapter) GetUserByID(ctx context.Context, userID gocql.UUID) (models.User_DB, bool, error) {
-	return models.User_DB{}, false, nil
+func (a *MockDBAdapter) GetUserByID(ctx context.Context, userID gocql.UUID) (models.User, bool, error) {
+	return models.User{}, false, nil
 }
 
 func TestWikiStreamAdapterConnect(t *testing.T) {
@@ -116,13 +117,15 @@ func TestWikiStreamAdapterConnect(t *testing.T) {
 	ctx := context.Background()
 	db := NewMockDBAdapter()
 
-	adapter := NewWikiStreamAdapterWithClient(logger, db, &MockClient{}, "https://example.com")
+	u, _ := url.Parse("https://example.com")
+
+	adapter := NewWikiStreamAdapterWithClient(logger, db, &MockClient{}, u)
 	if err := adapter.Connect(ctx); err != nil {
 		t.Errorf("Expected to connect, got error instead: %s", err.Error())
 	}
 	adapter.Close(ctx)
 
-	adapter = NewWikiStreamAdapterWithClient(logger, db, &MockErrorClient{}, "https://example.com")
+	adapter = NewWikiStreamAdapterWithClient(logger, db, &MockErrorClient{}, u)
 	if err := adapter.Connect(ctx); err == nil || !errors.Is(err, ErrMockConnectErr) {
 		t.Errorf("Expected error '%s', got '%s'", ErrMockConnectErr.Error(), err.Error())
 	}
@@ -157,7 +160,9 @@ func TestWikiStreamAdapterConume(t *testing.T) {
 	}()
 	time.Sleep(time.Second / 4) // Wait for work
 
-	adapter := NewWikiStreamAdapterWithClient(logger, db, client, "https://example.com")
+	u, _ := url.Parse("https://example.com")
+
+	adapter := NewWikiStreamAdapterWithClient(logger, db, client, u)
 	if err := adapter.Connect(ctx); err != nil {
 		t.Errorf("Expected to connect, got error instead: %s", err.Error())
 	}

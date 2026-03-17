@@ -6,11 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	netUrl "net/url"
 
 	"github.com/AMalley/be-workshop/ch-3/api/database"
@@ -20,38 +18,33 @@ import (
 
 var dataTag = []byte("data: ")
 
-// WikiStreamRequestDoer defines the interface of a http request doer - often http.Client
-type WikiStreamRequestDoer interface {
+// wikiStreamRequestDoer defines the interface of a http request doer - often http.Client
+type wikiStreamRequestDoer interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
 type WikiStreamAdapter struct {
 	stream io.ReadCloser
-	client WikiStreamRequestDoer
+	client wikiStreamRequestDoer
 
 	database database.DatabaseAdapter
 
 	logger *slog.Logger
-	url    *url.URL
+	url    *netUrl.URL
 }
 
 // NewWikiStreamAdapter returns a new Wiki stream adapter using http.DefaultClient as the underlying request doer.
-func NewWikiStreamAdapter(logger *slog.Logger, database database.DatabaseAdapter, url string) *WikiStreamAdapter {
+func NewWikiStreamAdapter(logger *slog.Logger, database database.DatabaseAdapter, url *netUrl.URL) *WikiStreamAdapter {
 	return NewWikiStreamAdapterWithClient(logger, database, http.DefaultClient, url)
 }
 
-// NewWikiStreamAdapter returns a new Wiki stream adapter using the providered client as the underlying requeust doer.
-func NewWikiStreamAdapterWithClient(logger *slog.Logger, database database.DatabaseAdapter, client WikiStreamRequestDoer, url string) *WikiStreamAdapter {
-	u, err := netUrl.Parse(url)
-	if err != nil {
-		panic(fmt.Errorf("fatal: unable to parse stream URL: %s: %s", url, err.Error()))
-	}
-
+// NewWikiStreamAdapterWithClient returns a new Wiki stream adapter using the provided client as the underlying request doer.
+func NewWikiStreamAdapterWithClient(logger *slog.Logger, database database.DatabaseAdapter, client wikiStreamRequestDoer, url *netUrl.URL) *WikiStreamAdapter {
 	return &WikiStreamAdapter{
 		logger:   logger.With(slog.String("src", "WikiStreamAdapter")),
 		database: database,
 		client:   client,
-		url:      u,
+		url:      url,
 	}
 }
 

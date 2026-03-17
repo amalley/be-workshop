@@ -17,11 +17,11 @@ type DatabaseAdapter interface {
 	InsertStats(ctx context.Context, stats models.WikiStatsModel) error
 	GetStats(ctx context.Context) (models.WikiStatsCounts, error)
 
-	GetUser(ctx context.Context, username string) (models.User_DB, bool, error)
+	GetUser(ctx context.Context, username string) (models.User, bool, error)
 	CreateUser(ctx context.Context, username, password string) error
 	DeleteUser(ctx context.Context, userID gocql.UUID) error
 
-	GetUserByID(ctx context.Context, userID gocql.UUID) (models.User_DB, bool, error)
+	GetUserByID(ctx context.Context, userID gocql.UUID) (models.User, bool, error)
 }
 
 var _ DatabaseAdapter = &scylla.ScyllaDatabaseAdapter{}
