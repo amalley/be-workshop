@@ -42,7 +42,11 @@ func (p *PublicAuthenticator) AuthenticationMiddleware(subVerify func(sub string
 
 			if err != nil || !token.Valid {
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte("invalid token"))
+				if err != nil {
+					w.Write([]byte("invalid token: " + err.Error()))
+				} else {
+					w.Write([]byte("invalid token"))
+				}
 				return
 			}
 
@@ -82,10 +86,10 @@ func (p *PublicAuthenticator) AuthenticationMiddleware(subVerify func(sub string
 }
 
 // GenerateToken generates a jwt token for the given subject.
-func (p *PublicAuthenticator) GenerateToken(sub string) (string, error) {
+func (p *PublicAuthenticator) GenerateToken(iss, sub string) (string, error) {
 	claim := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub": sub,
-		"iss": "wikistats-app",
+		"iss": iss,
 		"iat": time.Now().Unix(),
 		"exp": time.Now().Add(24 * time.Hour).Unix(),
 	})

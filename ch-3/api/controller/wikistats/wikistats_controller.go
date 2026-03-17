@@ -23,6 +23,8 @@ import (
 
 var _ controller.Controller = &WikiStatsController{}
 
+const iss = "wikistats-app"
+
 type WikiStatsController struct {
 	logger *slog.Logger
 
@@ -202,7 +204,6 @@ func (c *WikiStatsController) Liveness(ctx *models.RequestCtx) {
 
 func (c *WikiStatsController) GetStats(ctx *models.RequestCtx) {
 	stats, err := c.database.GetStats(ctx.Request().Context())
-
 	if err != nil {
 		ctx.Logger().Error("Failed to get stats", slog.Any("err", err))
 		http.Error(ctx.Response(), fmt.Sprintf("Failed to get stats: %s", err.Error()), http.StatusInternalServerError)
@@ -271,7 +272,6 @@ func (c *WikiStatsController) CreateUser(ctx *models.RequestCtx) {
 
 func (c *WikiStatsController) DeleteUser(ctx *models.RequestCtx) {
 	username := ctx.Request().URL.Query().Get("user")
-
 	if username == "" {
 		http.Error(ctx.Response(), "No user query parameter provided", http.StatusBadRequest)
 		return
@@ -307,8 +307,6 @@ func (c *WikiStatsController) DeleteUser(ctx *models.RequestCtx) {
 // --------------------------------------------------------------------------------------------
 
 func (c *WikiStatsController) Login(ctx *models.RequestCtx) {
-	logger := ctx.Logger()
-
 	if ctx.Request().ContentLength == 0 {
 		http.Error(ctx.Response(), "No request body provided", http.StatusBadRequest)
 		return
@@ -323,36 +321,36 @@ func (c *WikiStatsController) Login(ctx *models.RequestCtx) {
 
 	userDB, exists, err := c.database.GetUser(ctx.Request().Context(), login.Username)
 	if err != nil {
-		logger.Error("Failed to login", slog.Any("err", err), slog.String("user", login.Username))
+		ctx.Logger().Error("Failed to login", slog.Any("err", err), slog.String("user", login.Username))
 		http.Error(ctx.Response(), fmt.Sprintf("Internal server error: %s", err.Error()), http.StatusInternalServerError)
 		return
 	}
 
 	if !exists {
-		logger.Error("Failed to login", slog.String("err", "user not found"), slog.String("user", login.Username))
+		ctx.Logger().Error("Failed to login", slog.String("err", "user not found"), slog.String("user", login.Username))
 		http.Error(ctx.Response(), fmt.Sprintf("User '%s' not found", login.Username), http.StatusUnauthorized)
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword(userDB.Password, []byte(login.Password)); err != nil {
 		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
-			logger.Error("Failed to login", slog.String("err", "Invalid credentials"), slog.String("user", login.Username))
+			ctx.Logger().Error("Failed to login", slog.String("err", "Invalid credentials"), slog.String("user", login.Username))
 			http.Error(ctx.Response(), "Invalid credentials", http.StatusUnauthorized)
 			return
 		}
-		logger.Error("Failed to login", slog.Any("err", err), slog.String("user", login.Username))
+		ctx.Logger().Error("Failed to login", slog.Any("err", err), slog.String("user", login.Username))
 		http.Error(ctx.Response(), "Failed to login", http.StatusUnauthorized)
 		return
 	}
 
-	token, err := c.authenticator.GenerateToken(userDB.ID.String())
+	token, err := c.authenticator.GenerateToken(iss, userDB.ID.String())
 	if err != nil {
-		logger.Error("Failed to login", slog.Any("err", err), slog.String("user", login.Username))
+		ctx.Logger().Error("Failed to login", slog.Any("err", err), slog.String("user", login.Username))
 		http.Error(ctx.Response(), "Failed to login", http.StatusUnauthorized)
 		return
 	}
 
-	logger.Info("Login successful", slog.String("user", login.Username))
+	ctx.Logger().Info("Login successful", slog.String("user", login.Username))
 
 	ctx.Response().Header().Set("Content-Type", "application/json")
 	ctx.Response().WriteHeader(http.StatusOK)

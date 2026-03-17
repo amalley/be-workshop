@@ -11,7 +11,7 @@ type ctxUserIDKey struct{}
 // Authenticator defines the interface for handling authentication.
 type Authenticator interface {
 	AuthenticationMiddleware(subVerify func(sub string) bool) middleware.Middleware
-	GenerateToken(sub string) (string, error)
+	GenerateToken(iss, sub string) (string, error)
 }
 
 // SetCtxUserID sets the user ID in the context, allowing it to be accessed in handlers after authentication.
