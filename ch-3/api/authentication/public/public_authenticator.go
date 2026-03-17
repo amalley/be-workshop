@@ -46,16 +46,8 @@ func (p *PublicAuthenticator) AuthenticationMiddleware(subVerify func(sub string
 				return
 			}
 
-			now := time.Now().Unix()
 			claims, ok := token.Claims.(jwt.MapClaims)
-
-			if ok && token.Valid {
-				if exp, ok := claims["exp"].(float64); !ok || int64(exp) < now {
-					w.WriteHeader(http.StatusUnauthorized)
-					w.Write([]byte("token expired"))
-					return
-				}
-			} else {
+			if !ok {
 				w.WriteHeader(http.StatusUnauthorized)
 				w.Write([]byte("invalid token claims"))
 				return
