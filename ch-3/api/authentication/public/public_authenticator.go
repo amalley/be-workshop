@@ -53,17 +53,25 @@ func (p *PublicAuthenticator) AuthenticationMiddleware(subVerify func(sub string
 				return
 			}
 
-			exp, ok := claims["exp"].(float64)
-			if !ok || time.Unix(int64(exp), 0).Before(time.Now()) {
+			exp, err := claims.GetExpirationTime()
+			if err != nil || time.Unix(exp.Unix(), 0).Before(time.Now()) {
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte("token has expired"))
+				if err != nil {
+					w.Write([]byte("invalid token expiration"))
+				} else {
+					w.Write([]byte("token expired"))
+				}
 				return
 			}
 
-			sub, ok := claims["sub"].(string)
-			if !ok || !subVerify(sub) {
+			sub, err := claims.GetSubject()
+			if err != nil || !subVerify(sub) {
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte("invalid token subject"))
+				if err != nil {
+					w.Write([]byte("invalid token subject"))
+				} else {
+					w.Write([]byte("unauthorized subject"))
+				}
 				return
 			}
 
