@@ -7,6 +7,8 @@ env:
   WORKING_DIR: ./ch-4
 
 jobs:
+
+  # Runs linters to ensure code quality and consistency.
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -23,6 +25,7 @@ jobs:
           go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
           golangci-lint run ./api/...
 
+  # Runs unit and integration tests to validate the functionality of the application.
   tests:
     runs-on: ubuntu-latest
     steps:
@@ -36,3 +39,13 @@ jobs:
       - name: Run tests
         working-directory: ${{ env.WORKING_DIR }}
         run: go test -v ./api/...
+
+  # Builds the application using Docker to ensure it compiles successfully.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build Docker image
+        working-directory: ${{ env.WORKING_DIR }}
+        run: docker build -t wikistats:latest .
