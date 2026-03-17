@@ -1,13 +1,15 @@
 package public
 
 import (
-	"context"
 	"net/http"
 	"time"
 
+	"github.com/AMalley/be-workshop/ch-3/api/authentication"
 	"github.com/AMalley/be-workshop/ch-3/api/middleware"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+var _ authentication.Authenticator = &PublicAuthenticator{}
 
 type PublicAuthenticator struct {
 }
@@ -66,7 +68,7 @@ func (p *PublicAuthenticator) AuthenticationMiddleware(subVerify func(sub string
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), "X-User-ID", sub)
+			ctx := authentication.SetCtxUserID(r.Context(), sub)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

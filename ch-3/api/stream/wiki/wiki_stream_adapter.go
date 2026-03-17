@@ -9,14 +9,17 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	netUrl "net/url"
+	neturl "net/url"
 
 	"github.com/AMalley/be-workshop/ch-3/api/database"
+	"github.com/AMalley/be-workshop/ch-3/api/stream"
 	"github.com/AMalley/be-workshop/ch-3/api/utils"
 	"github.com/AMalley/be-workshop/ch-3/models"
 )
 
 var dataTag = []byte("data: ")
+
+var _ stream.StreamAdapter = &WikiStreamAdapter{}
 
 // wikiStreamRequestDoer defines the interface of a http request doer - often http.Client
 type wikiStreamRequestDoer interface {
@@ -30,16 +33,16 @@ type WikiStreamAdapter struct {
 	database database.DatabaseAdapter
 
 	logger *slog.Logger
-	url    *netUrl.URL
+	url    *neturl.URL
 }
 
 // NewWikiStreamAdapter returns a new Wiki stream adapter using http.DefaultClient as the underlying request doer.
-func NewWikiStreamAdapter(logger *slog.Logger, database database.DatabaseAdapter, url *netUrl.URL) *WikiStreamAdapter {
+func NewWikiStreamAdapter(logger *slog.Logger, database database.DatabaseAdapter, url *neturl.URL) *WikiStreamAdapter {
 	return NewWikiStreamAdapterWithClient(logger, database, http.DefaultClient, url)
 }
 
 // NewWikiStreamAdapterWithClient returns a new Wiki stream adapter using the provided client as the underlying request doer.
-func NewWikiStreamAdapterWithClient(logger *slog.Logger, database database.DatabaseAdapter, client wikiStreamRequestDoer, url *netUrl.URL) *WikiStreamAdapter {
+func NewWikiStreamAdapterWithClient(logger *slog.Logger, database database.DatabaseAdapter, client wikiStreamRequestDoer, url *neturl.URL) *WikiStreamAdapter {
 	return &WikiStreamAdapter{
 		logger:   logger.With(slog.String("src", "WikiStreamAdapter")),
 		database: database,

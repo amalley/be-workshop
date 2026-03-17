@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 
-	"github.com/AMalley/be-workshop/ch-3/api/database/scylla"
 	"github.com/AMalley/be-workshop/ch-3/models"
 	"github.com/gocql/gocql"
 )
@@ -23,5 +22,3 @@ type DatabaseAdapter interface {
 
 	GetUserByID(ctx context.Context, userID gocql.UUID) (models.User, bool, error)
 }
-
-var _ DatabaseAdapter = &scylla.ScyllaDatabaseAdapter{}

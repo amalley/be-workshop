@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 
-	"github.com/AMalley/be-workshop/ch-3/api/controller/wikistats"
 	"github.com/AMalley/be-workshop/ch-3/models"
 )
 
@@ -41,5 +40,3 @@ type Controller interface {
 
 	Login(*models.RequestCtx)
 }
-
-var _ Controller = &wikistats.WikiStatsController{}

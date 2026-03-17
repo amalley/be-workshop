@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AMalley/be-workshop/ch-3/api/authentication"
+	"github.com/AMalley/be-workshop/ch-3/api/controller"
 	"github.com/AMalley/be-workshop/ch-3/api/database"
 	"github.com/AMalley/be-workshop/ch-3/api/middleware"
 	"github.com/AMalley/be-workshop/ch-3/api/stream"
@@ -19,6 +20,8 @@ import (
 	"github.com/gocql/gocql"
 	"golang.org/x/crypto/bcrypt"
 )
+
+var _ controller.Controller = &WikiStatsController{}
 
 type WikiStatsController struct {
 	logger *slog.Logger
