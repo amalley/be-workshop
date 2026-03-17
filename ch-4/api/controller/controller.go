@@ -3,7 +3,7 @@ package controller
 import (
 	"context"
 
-	"github.com/AMalley/be-workshop/ch-4/models"
+	"github.com/AMalley/be-workshop/ch-4/api/web"
 )
 
 // Controller defines the interface for the server's handler controller
@@ -19,24 +19,24 @@ type Controller interface {
 	// Health
 	// --------------------------------------------------------------------------------------------
 
-	Liveness(*models.RequestCtx)
+	Liveness(*web.RequestCtx)
 
 	// --------------------------------------------------------------------------------------------
 	// User
 	// --------------------------------------------------------------------------------------------
 
-	CreateUser(*models.RequestCtx)
-	DeleteUser(*models.RequestCtx)
+	CreateUser(*web.RequestCtx)
+	DeleteUser(*web.RequestCtx)
 
 	// --------------------------------------------------------------------------------------------
 	// Stats
 	// --------------------------------------------------------------------------------------------
 
-	GetStats(*models.RequestCtx)
+	GetStats(*web.RequestCtx)
 
 	// --------------------------------------------------------------------------------------------
 	// Login
 	// --------------------------------------------------------------------------------------------
 
-	Login(*models.RequestCtx)
+	Login(*web.RequestCtx)
 }

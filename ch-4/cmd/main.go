@@ -94,7 +94,7 @@ func main() {
 	}
 
 	stm := wiki.NewWikiStreamAdapter(lgr, syl, u)
-	pub := public.NewPublicAuthenticator()
+	pub := public.NewPublicAuthenticator(lgr)
 
 	ctl := wikistats.NewWikiStatsController(lgr, stm, syl, pub)
 	ctl.RegisterRoutes(mux)

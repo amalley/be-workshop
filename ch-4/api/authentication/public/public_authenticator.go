@@ -1,33 +1,41 @@
 package public
 
 import (
+	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/AMalley/be-workshop/ch-4/api/authentication"
 	"github.com/AMalley/be-workshop/ch-4/api/middleware"
+	"github.com/AMalley/be-workshop/ch-4/api/web"
 	"github.com/golang-jwt/jwt/v5"
 )
 
 var _ authentication.Authenticator = &PublicAuthenticator{}
 
 type PublicAuthenticator struct {
+	logger *slog.Logger
 }
 
-func NewPublicAuthenticator() *PublicAuthenticator {
-	return &PublicAuthenticator{}
+func NewPublicAuthenticator(logger *slog.Logger) *PublicAuthenticator {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &PublicAuthenticator{
+		logger: logger,
+	}
 }
 
-func (p *PublicAuthenticator) AuthenticationMiddleware(subVerify func(sub string) bool) middleware.Middleware {
-	if subVerify == nil {
-		subVerify = func(sub string) bool { return false }
+func (p *PublicAuthenticator) AuthenticationMiddleware(subVerifier authentication.SubjectVerifier) middleware.Middleware {
+	if subVerifier == nil {
+		subVerifier = func(sub string) bool { return false }
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
-				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte("missing authorization header"))
+				web.SendError(p.logger, w, http.StatusUnauthorized, errors.New("missing Authorization header"))
 				return
 			}
 
@@ -41,40 +49,32 @@ func (p *PublicAuthenticator) AuthenticationMiddleware(subVerify func(sub string
 			})
 
 			if err != nil || !token.Valid {
-				w.WriteHeader(http.StatusUnauthorized)
-				if err != nil {
-					w.Write([]byte("invalid token: " + err.Error()))
-				} else {
-					w.Write([]byte("invalid token"))
-				}
+				web.SendError(p.logger, w, http.StatusUnauthorized, errors.New("invalid token"))
 				return
 			}
 
 			claims, ok := token.Claims.(jwt.MapClaims)
 			if !ok {
-				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte("invalid token claims"))
+				web.SendError(p.logger, w, http.StatusUnauthorized, errors.New("invalid token claims"))
 				return
 			}
 
 			exp, err := claims.GetExpirationTime()
 			if err != nil || time.Unix(exp.Unix(), 0).Before(time.Now()) {
-				w.WriteHeader(http.StatusUnauthorized)
 				if err != nil {
-					w.Write([]byte("invalid token expiration"))
+					web.SendError(p.logger, w, http.StatusUnauthorized, errors.New("invalid token expiration"))
 				} else {
-					w.Write([]byte("token expired"))
+					web.SendError(p.logger, w, http.StatusUnauthorized, errors.New("token expired"))
 				}
 				return
 			}
 
 			sub, err := claims.GetSubject()
-			if err != nil || !subVerify(sub) {
-				w.WriteHeader(http.StatusUnauthorized)
+			if err != nil || !subVerifier(sub) {
 				if err != nil {
-					w.Write([]byte("invalid token subject"))
+					web.SendError(p.logger, w, http.StatusUnauthorized, errors.New("invalid token subject"))
 				} else {
-					w.Write([]byte("unauthorized subject"))
+					web.SendError(p.logger, w, http.StatusUnauthorized, errors.New("unauthorized subject"))
 				}
 				return
 			}

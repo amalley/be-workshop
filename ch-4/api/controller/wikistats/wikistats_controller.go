@@ -16,6 +16,7 @@ import (
 	"github.com/AMalley/be-workshop/ch-4/api/middleware"
 	"github.com/AMalley/be-workshop/ch-4/api/stream"
 	"github.com/AMalley/be-workshop/ch-4/api/utils"
+	"github.com/AMalley/be-workshop/ch-4/api/web"
 	"github.com/AMalley/be-workshop/ch-4/models"
 	"github.com/gocql/gocql"
 	"golang.org/x/crypto/bcrypt"
@@ -87,10 +88,10 @@ func (c *WikiStatsController) VerifyPublicUser(sub string) bool {
 	return true
 }
 
-// handler wraps a models.RequestCtx around the standard http.HandlerFunc, allowing us to use our custom context with logging and other utilities in our handlers.
-func (c *WikiStatsController) handler(handler func(*models.RequestCtx)) http.HandlerFunc {
+// handler wraps a web.RequestCtx around the standard http.HandlerFunc, allowing us to use our custom context with logging and other utilities in our handlers.
+func (c *WikiStatsController) handler(handler func(*web.RequestCtx)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		handler(models.NewRequestCtx(c.logger, w, r))
+		handler(web.NewRequestCtx(c.logger, w, r))
 	}
 }
 
@@ -192,21 +193,20 @@ func (c *WikiStatsController) OnShutdown(ctx context.Context) error {
 // Health
 // --------------------------------------------------------------------------------------------
 
-func (c *WikiStatsController) Liveness(ctx *models.RequestCtx) {
+func (c *WikiStatsController) Liveness(ctx *web.RequestCtx) {
 	ctx.Logger().Info("We're alive!")
-	ctx.Response().WriteHeader(http.StatusOK)
-	ctx.Response().Write([]byte("OK"))
+	ctx.Send(http.StatusOK, []byte("OK"))
 }
 
 // --------------------------------------------------------------------------------------------
 // Stats
 // --------------------------------------------------------------------------------------------
 
-func (c *WikiStatsController) GetStats(ctx *models.RequestCtx) {
+func (c *WikiStatsController) GetStats(ctx *web.RequestCtx) {
 	stats, err := c.database.GetStats(ctx.Request().Context())
 	if err != nil {
 		ctx.Logger().Error("Failed to get stats", slog.Any("err", err))
-		http.Error(ctx.Response(), fmt.Sprintf("Failed to get stats: %s", err.Error()), http.StatusInternalServerError)
+		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("failed to get stats: %w", err))
 		return
 	}
 
@@ -217,145 +217,129 @@ func (c *WikiStatsController) GetStats(ctx *models.RequestCtx) {
 		slog.Int("servers", stats.Servers),
 	)
 
-	ctx.Response().Header().Set("Content-Type", "application/json")
-	ctx.Response().WriteHeader(http.StatusOK)
-
-	json.NewEncoder(ctx.Response()).Encode(models.GetStatsResponse{
-		Messages: stats.Messages,
-		Users:    stats.Users,
-		Bots:     stats.Bots,
-		Servers:  stats.Servers,
-	})
+	ctx.SendJSON(http.StatusOK, stats)
 }
 
 // --------------------------------------------------------------------------------------------
 // User
 // --------------------------------------------------------------------------------------------
 
-func (c *WikiStatsController) CreateUser(ctx *models.RequestCtx) {
+func (c *WikiStatsController) CreateUser(ctx *web.RequestCtx) {
 	if ctx.Request().ContentLength == 0 {
-		http.Error(ctx.Response(), "No request body provided", http.StatusBadRequest)
+		ctx.SendError(http.StatusBadRequest, fmt.Errorf("no request body provided"))
 		return
 	}
 
 	var newUser models.CreateUserRequest
 
 	if err := json.NewDecoder(ctx.Request().Body).Decode(&newUser); err != nil {
-		http.Error(ctx.Response(), "Invalid or missing JSON body", http.StatusBadRequest)
+		ctx.SendError(http.StatusBadRequest, fmt.Errorf("invalid or missing JSON body: %w", err))
 		return
 	}
 
 	_, exists, err := c.database.GetUser(ctx.Request().Context(), newUser.Username)
 	if err != nil {
 		ctx.Logger().Error("Failed to create user", slog.Any("err", err), slog.String("user", newUser.Username))
-		http.Error(ctx.Response(), fmt.Sprintf("Internal server error: %s", err.Error()), http.StatusInternalServerError)
+		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("internal server error: %w", err))
 		return
 	}
 
 	if exists {
 		ctx.Logger().Error("Failed to create user", slog.String("err", "user already exists"), slog.String("user", newUser.Username))
-		http.Error(ctx.Response(), fmt.Sprintf("User '%s' already exists", newUser.Username), http.StatusConflict)
+		ctx.SendError(http.StatusConflict, fmt.Errorf("user '%s' already exists", newUser.Username))
 		return
 	}
 
 	if err := c.database.CreateUser(ctx.Request().Context(), newUser.Username, newUser.Password); err != nil {
 		ctx.Logger().Error("Failed to create user", slog.Any("err", err), slog.String("user", newUser.Username))
-		http.Error(ctx.Response(), fmt.Sprintf("Failed to create user: %s", err.Error()), http.StatusInternalServerError)
+		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("failed to create user: %w", err))
 		return
 	}
 
 	ctx.Logger().Info("User created", slog.String("user", newUser.Username))
-
-	ctx.Response().WriteHeader(http.StatusCreated)
-	ctx.Response().Write([]byte("OK"))
+	ctx.Send(http.StatusOK, []byte("OK"))
 }
 
-func (c *WikiStatsController) DeleteUser(ctx *models.RequestCtx) {
+func (c *WikiStatsController) DeleteUser(ctx *web.RequestCtx) {
 	username := ctx.Request().URL.Query().Get("user")
 	if username == "" {
-		http.Error(ctx.Response(), "No user query parameter provided", http.StatusBadRequest)
+		ctx.SendError(http.StatusBadRequest, fmt.Errorf("no user query parameter provided"))
 		return
 	}
 
 	userDB, exists, err := c.database.GetUser(ctx.Request().Context(), username)
 	if err != nil {
 		ctx.Logger().Error("Failed to get user", slog.Any("err", err), slog.String("user", username))
-		http.Error(ctx.Response(), fmt.Sprintf("Failed to get user: %s", err.Error()), http.StatusInternalServerError)
+		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("failed to get user: %w", err))
 		return
 	}
 
 	if !exists {
 		ctx.Logger().Error("Failed to delete user", slog.String("err", "user not found"), slog.String("user", username))
-		http.Error(ctx.Response(), fmt.Sprintf("User '%s' not found", username), http.StatusNotFound)
+		ctx.SendError(http.StatusNotFound, fmt.Errorf("user '%s' not found", username))
 		return
 	}
 
 	if err := c.database.DeleteUser(ctx.Request().Context(), userDB.ID); err != nil {
 		ctx.Logger().Error("Failed to delete user", slog.Any("err", err), slog.String("user", username), slog.String("user_id", userDB.ID.String()))
-		http.Error(ctx.Response(), fmt.Sprintf("Failed to delete user: %s", err.Error()), http.StatusInternalServerError)
+		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("failed to delete user: %w", err))
 		return
 	}
 
 	ctx.Logger().Info("User deleted", slog.String("user", username), slog.String("user_id", userDB.ID.String()))
-
-	ctx.Response().WriteHeader(http.StatusOK)
-	ctx.Response().Write([]byte("OK"))
+	ctx.Send(http.StatusOK, []byte("OK"))
 }
 
 // --------------------------------------------------------------------------------------------
 // Login
 // --------------------------------------------------------------------------------------------
 
-func (c *WikiStatsController) Login(ctx *models.RequestCtx) {
+func (c *WikiStatsController) Login(ctx *web.RequestCtx) {
 	if ctx.Request().ContentLength == 0 {
-		http.Error(ctx.Response(), "No request body provided", http.StatusBadRequest)
+		ctx.SendError(http.StatusBadRequest, fmt.Errorf("no request body provided"))
 		return
 	}
 
 	var login models.LoginRequest
 
 	if err := json.NewDecoder(ctx.Request().Body).Decode(&login); err != nil {
-		http.Error(ctx.Response(), "Invalid or missing JSON body", http.StatusBadRequest)
+		ctx.SendError(http.StatusBadRequest, fmt.Errorf("invalid or missing JSON body: %w", err))
 		return
 	}
 
 	userDB, exists, err := c.database.GetUser(ctx.Request().Context(), login.Username)
 	if err != nil {
 		ctx.Logger().Error("Failed to login", slog.Any("err", err), slog.String("user", login.Username))
-		http.Error(ctx.Response(), fmt.Sprintf("Internal server error: %s", err.Error()), http.StatusInternalServerError)
+		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("internal server error: %w", err))
 		return
 	}
 
 	if !exists {
 		ctx.Logger().Error("Failed to login", slog.String("err", "user not found"), slog.String("user", login.Username))
-		http.Error(ctx.Response(), fmt.Sprintf("User '%s' not found", login.Username), http.StatusUnauthorized)
+		ctx.SendError(http.StatusUnauthorized, fmt.Errorf("user '%s' not found", login.Username))
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword(userDB.Password, []byte(login.Password)); err != nil {
 		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
 			ctx.Logger().Error("Failed to login", slog.String("err", "Invalid credentials"), slog.String("user", login.Username))
-			http.Error(ctx.Response(), "Invalid credentials", http.StatusUnauthorized)
+			ctx.SendError(http.StatusUnauthorized, fmt.Errorf("invalid credentials"))
 			return
 		}
 		ctx.Logger().Error("Failed to login", slog.Any("err", err), slog.String("user", login.Username))
-		http.Error(ctx.Response(), "Failed to login", http.StatusUnauthorized)
+		ctx.SendError(http.StatusUnauthorized, fmt.Errorf("failed to login: %w", err))
 		return
 	}
 
 	token, err := c.authenticator.GenerateToken(iss, userDB.ID.String())
 	if err != nil {
 		ctx.Logger().Error("Failed to login", slog.Any("err", err), slog.String("user", login.Username))
-		http.Error(ctx.Response(), "Failed to login", http.StatusUnauthorized)
+		ctx.SendError(http.StatusUnauthorized, fmt.Errorf("failed to login: %w", err))
 		return
 	}
 
 	ctx.Logger().Info("Login successful", slog.String("user", login.Username))
-
-	ctx.Response().Header().Set("Content-Type", "application/json")
-	ctx.Response().WriteHeader(http.StatusOK)
-
-	json.NewEncoder(ctx.Response()).Encode(models.LoginResponse{
+	ctx.SendJSON(http.StatusOK, models.LoginResponse{
 		Token: token,
 	})
 }

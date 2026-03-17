@@ -48,7 +48,11 @@ func TestScyllaIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start container: %v", err)
 	}
-	defer container.Terminate(ctx)
+	defer func() {
+		if err := container.Terminate(ctx); err != nil {
+			t.Fatalf("failed to terminate container: %v", err)
+		}
+	}()
 
 	host, err := container.Host(ctx)
 	if err != nil {

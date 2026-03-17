@@ -18,7 +18,11 @@ func PanicRecover(logger *slog.Logger) Middleware {
 						slog.String("stack", string(debug.Stack())),
 					)
 					w.WriteHeader(http.StatusInternalServerError)
-					w.Write([]byte("internal server error"))
+
+					_, err = w.Write([]byte("internal server error"))
+					if err != nil {
+						logger.Error("failed to write response", slog.Any("err", err))
+					}
 				}
 			}()
 			next.ServeHTTP(w, r)
