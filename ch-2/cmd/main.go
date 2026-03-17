@@ -59,7 +59,7 @@ func getEnv(name string, fallback string) string {
 }
 
 func loadDotEnv() {
-	envFile, err := os.Open(".env")
+	envFile, err := os.Open("../.env")
 	if err != nil {
 		println(fmt.Sprintf("error loading .env: %s", err.Error()))
 		return // We'll log the error and continue, our arguments have fallbacks and this shouldn't kill the application.
