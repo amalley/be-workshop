@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AMalley/be-workshop/ch-3/api/database/scylla"
+	"github.com/amalley/be-workshop/ch-3/api/database/scylla"
 	"github.com/gocql/gocql"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"

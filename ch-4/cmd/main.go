@@ -12,12 +12,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/AMalley/be-workshop/ch-4/api/authentication/public"
-	"github.com/AMalley/be-workshop/ch-4/api/controller/wikistats"
-	"github.com/AMalley/be-workshop/ch-4/api/database/scylla"
-	"github.com/AMalley/be-workshop/ch-4/api/middleware"
-	"github.com/AMalley/be-workshop/ch-4/api/server"
-	"github.com/AMalley/be-workshop/ch-4/api/stream/wiki"
+	"github.com/amalley/be-workshop/ch-4/api/authentication/public"
+	"github.com/amalley/be-workshop/ch-4/api/controller/wikistats"
+	"github.com/amalley/be-workshop/ch-4/api/database/scylla"
+	"github.com/amalley/be-workshop/ch-4/api/middleware"
+	"github.com/amalley/be-workshop/ch-4/api/server"
+	"github.com/amalley/be-workshop/ch-4/api/stream/wiki"
 	"github.com/gocql/gocql"
 )
 

@@ -3,7 +3,7 @@ package authentication
 import (
 	"context"
 
-	"github.com/AMalley/be-workshop/ch-3/api/middleware"
+	"github.com/amalley/be-workshop/ch-3/api/middleware"
 )
 
 type ctxUserIDKey struct{}

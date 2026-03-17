@@ -4,10 +4,10 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/AMalley/be-workshop/ch-1/api/adapter"
-	"github.com/AMalley/be-workshop/ch-1/api/controller"
-	"github.com/AMalley/be-workshop/ch-1/api/database"
-	"github.com/AMalley/be-workshop/ch-1/api/server"
+	"github.com/amalley/be-workshop/ch-1/api/adapter"
+	"github.com/amalley/be-workshop/ch-1/api/controller"
+	"github.com/amalley/be-workshop/ch-1/api/database"
+	"github.com/amalley/be-workshop/ch-1/api/server"
 )
 
 func main() {

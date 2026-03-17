@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/AMalley/be-workshop/ch-5/api/database"
-	"github.com/AMalley/be-workshop/ch-5/models"
+	"github.com/amalley/be-workshop/ch-5/api/database"
+	"github.com/amalley/be-workshop/ch-5/models"
 	"github.com/gocql/gocql"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -43,7 +43,8 @@ const (
 	ServersStat  = "servers"
 )
 
-var _ database.DatabaseAdapter = &ScyllaDatabaseAdapter{}
+var _ database.Reader = &ScyllaDatabaseAdapter{}
+var _ database.Writer = &ScyllaDatabaseAdapter{}
 
 type ScyllaDatabaseAdapter struct {
 	logger  *slog.Logger

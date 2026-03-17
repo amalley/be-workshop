@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/AMalley/be-workshop/ch-4/api/authentication"
-	"github.com/AMalley/be-workshop/ch-4/api/middleware"
-	"github.com/AMalley/be-workshop/ch-4/api/web"
+	"github.com/amalley/be-workshop/ch-4/api/authentication"
+	"github.com/amalley/be-workshop/ch-4/api/middleware"
+	"github.com/amalley/be-workshop/ch-4/api/web"
 	"github.com/golang-jwt/jwt/v5"
 )
 

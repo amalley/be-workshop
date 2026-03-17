@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/AMalley/be-workshop/ch-3/api/authentication"
-	"github.com/AMalley/be-workshop/ch-3/api/middleware"
+	"github.com/amalley/be-workshop/ch-3/api/authentication"
+	"github.com/amalley/be-workshop/ch-3/api/middleware"
 	"github.com/golang-jwt/jwt/v5"
 )
 

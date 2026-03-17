@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/AMalley/be-workshop/ch-5/api/utils"
+	"github.com/amalley/be-workshop/ch-5/api/utils"
 )
 
 type ServerHook func(ctx context.Context) error

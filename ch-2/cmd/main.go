@@ -8,10 +8,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/AMalley/be-workshop/ch-2/api/adapter"
-	"github.com/AMalley/be-workshop/ch-2/api/controller"
-	"github.com/AMalley/be-workshop/ch-2/api/database"
-	"github.com/AMalley/be-workshop/ch-2/api/server"
+	"github.com/amalley/be-workshop/ch-2/api/adapter"
+	"github.com/amalley/be-workshop/ch-2/api/controller"
+	"github.com/amalley/be-workshop/ch-2/api/database"
+	"github.com/amalley/be-workshop/ch-2/api/server"
 )
 
 type Args struct {

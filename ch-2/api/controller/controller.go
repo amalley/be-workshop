@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/AMalley/be-workshop/ch-2/api/database"
+	"github.com/amalley/be-workshop/ch-2/api/database"
 )
 
 type Controller struct {

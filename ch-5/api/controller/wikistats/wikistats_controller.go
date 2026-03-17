@@ -10,14 +10,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AMalley/be-workshop/ch-5/api/authentication"
-	"github.com/AMalley/be-workshop/ch-5/api/controller"
-	"github.com/AMalley/be-workshop/ch-5/api/database"
-	"github.com/AMalley/be-workshop/ch-5/api/middleware"
-	"github.com/AMalley/be-workshop/ch-5/api/stream"
-	"github.com/AMalley/be-workshop/ch-5/api/utils"
-	"github.com/AMalley/be-workshop/ch-5/api/web"
-	"github.com/AMalley/be-workshop/ch-5/models"
+	"github.com/amalley/be-workshop/ch-5/api/authentication"
+	"github.com/amalley/be-workshop/ch-5/api/controller"
+	"github.com/amalley/be-workshop/ch-5/api/database"
+	"github.com/amalley/be-workshop/ch-5/api/middleware"
+	"github.com/amalley/be-workshop/ch-5/api/utils"
+	"github.com/amalley/be-workshop/ch-5/api/web"
+	"github.com/amalley/be-workshop/ch-5/models"
 	"github.com/gocql/gocql"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -29,20 +28,17 @@ const iss = "wikistats-app"
 type WikiStatsController struct {
 	logger *slog.Logger
 
-	stream        stream.StreamAdapter
-	database      database.DatabaseAdapter
+	dbAdapter     database.Adapter
 	authenticator authentication.Authenticator
 }
 
 func NewWikiStatsController(
 	logger *slog.Logger,
-	stream stream.StreamAdapter,
-	database database.DatabaseAdapter,
+	dbAdapter database.Adapter,
 	authenticator authentication.Authenticator) *WikiStatsController {
 	return &WikiStatsController{
 		logger:        logger.With(slog.String("src", "WikiStatsController")),
-		stream:        stream,
-		database:      database,
+		dbAdapter:     dbAdapter,
 		authenticator: authenticator,
 	}
 }
@@ -54,7 +50,7 @@ func (c *WikiStatsController) RegisterRoutes(mux *http.ServeMux) {
 	mdl := middleware.NewMiddlewareRegistry()
 
 	// Database dependent routes
-	mdl.Use(c.DatabaseReadinessMiddleware(c.database))
+	mdl.Use(c.DatabaseReadinessMiddleware(c.dbAdapter))
 	mux.Handle("POST /login", mdl.Resolve(c.handler(c.Login)))
 
 	// Note: OnStartup adds an admin/password test user.
@@ -74,7 +70,7 @@ func (c *WikiStatsController) VerifyPublicUser(sub string) bool {
 		return false
 	}
 
-	_, exists, err := c.database.GetUserByID(context.Background(), userID)
+	_, exists, err := c.dbAdapter.GetUserByID(context.Background(), userID)
 	if err != nil {
 		c.logger.Error("Failed to get user by ID", slog.Any("err", err), slog.String("user_id", sub))
 		return false
@@ -99,7 +95,7 @@ func (c *WikiStatsController) handler(handler func(*web.RequestCtx)) http.Handle
 // Middleware
 // --------------------------------------------------------------------------------------------
 
-func (c *WikiStatsController) DatabaseReadinessMiddleware(database database.DatabaseAdapter) middleware.Middleware {
+func (c *WikiStatsController) DatabaseReadinessMiddleware(database database.Adapter) middleware.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !database.IsReady() {
@@ -124,12 +120,7 @@ func (c *WikiStatsController) OnStartup(ctx context.Context) error {
 
 	var grp sync.WaitGroup
 	grp.Go(func() {
-		if err := c.stream.Connect(ctx); err != nil {
-			c.logger.Error("Failed to connect to stream", slog.Any("err", err))
-		}
-	})
-	grp.Go(func() {
-		if err := c.database.Connect(ctx); err != nil {
+		if err := c.dbAdapter.Connect(ctx); err != nil {
 			c.logger.Error("Failed to connect to database", slog.Any("err", err))
 		}
 	})
@@ -139,7 +130,7 @@ func (c *WikiStatsController) OnStartup(ctx context.Context) error {
 	defer wait.Stop()
 
 	// Ensure the database infrastructure is ready before we start consuming the stream
-	for !c.database.IsReady() {
+	for !c.dbAdapter.IsReady() {
 		c.logger.Info("Waiting for database to be ready...")
 		select {
 		case <-ctx.Done():
@@ -148,24 +139,17 @@ func (c *WikiStatsController) OnStartup(ctx context.Context) error {
 		}
 	}
 
-	_, exists, err := c.database.GetUser(ctx, "admin")
+	_, exists, err := c.dbAdapter.GetUser(ctx, "admin")
 	if err != nil {
 		c.logger.Error("Failed to get default user", slog.Any("err", err))
 	}
 
 	if !exists {
 		// Don't do this in production
-		if err := c.database.CreateUser(ctx, "admin", "password"); err != nil {
+		if err := c.dbAdapter.CreateUser(ctx, "admin", "password"); err != nil {
 			c.logger.Error("Failed to create default user", slog.Any("err", err))
 		}
 	}
-
-	go func() {
-		c.logger.Info("Starting stream consumption")
-		if err := c.stream.Consume(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			c.logger.Error("Failed to consume stream", slog.Any("err", err))
-		}
-	}()
 
 	return nil
 }
@@ -178,11 +162,7 @@ func (c *WikiStatsController) OnShutdown(ctx context.Context) error {
 
 	// Note: We don't return errors here to avoid interrupting shutdown, but we do log them.
 
-	if err := c.stream.Close(ctx); err != nil {
-		c.logger.Error("Failed to close stream", slog.Any("err", err))
-	}
-
-	if err := c.database.Close(ctx); err != nil {
+	if err := c.dbAdapter.Close(ctx); err != nil {
 		c.logger.Error("Failed to close database", slog.Any("err", err))
 	}
 
@@ -203,7 +183,7 @@ func (c *WikiStatsController) Liveness(ctx *web.RequestCtx) {
 // --------------------------------------------------------------------------------------------
 
 func (c *WikiStatsController) GetStats(ctx *web.RequestCtx) {
-	stats, err := c.database.GetStats(ctx.Request().Context())
+	stats, err := c.dbAdapter.GetStats(ctx.Request().Context())
 	if err != nil {
 		ctx.Logger().Error("Failed to get stats", slog.Any("err", err))
 		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("failed to get stats: %w", err))
@@ -237,7 +217,7 @@ func (c *WikiStatsController) CreateUser(ctx *web.RequestCtx) {
 		return
 	}
 
-	_, exists, err := c.database.GetUser(ctx.Request().Context(), newUser.Username)
+	_, exists, err := c.dbAdapter.GetUser(ctx.Request().Context(), newUser.Username)
 	if err != nil {
 		ctx.Logger().Error("Failed to create user", slog.Any("err", err), slog.String("user", newUser.Username))
 		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("internal server error: %w", err))
@@ -250,7 +230,7 @@ func (c *WikiStatsController) CreateUser(ctx *web.RequestCtx) {
 		return
 	}
 
-	if err := c.database.CreateUser(ctx.Request().Context(), newUser.Username, newUser.Password); err != nil {
+	if err := c.dbAdapter.CreateUser(ctx.Request().Context(), newUser.Username, newUser.Password); err != nil {
 		ctx.Logger().Error("Failed to create user", slog.Any("err", err), slog.String("user", newUser.Username))
 		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("failed to create user: %w", err))
 		return
@@ -267,7 +247,7 @@ func (c *WikiStatsController) DeleteUser(ctx *web.RequestCtx) {
 		return
 	}
 
-	userDB, exists, err := c.database.GetUser(ctx.Request().Context(), username)
+	userDB, exists, err := c.dbAdapter.GetUser(ctx.Request().Context(), username)
 	if err != nil {
 		ctx.Logger().Error("Failed to get user", slog.Any("err", err), slog.String("user", username))
 		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("failed to get user: %w", err))
@@ -280,7 +260,7 @@ func (c *WikiStatsController) DeleteUser(ctx *web.RequestCtx) {
 		return
 	}
 
-	if err := c.database.DeleteUser(ctx.Request().Context(), userDB.ID); err != nil {
+	if err := c.dbAdapter.DeleteUser(ctx.Request().Context(), userDB.ID); err != nil {
 		ctx.Logger().Error("Failed to delete user", slog.Any("err", err), slog.String("user", username), slog.String("user_id", userDB.ID.String()))
 		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("failed to delete user: %w", err))
 		return
@@ -307,7 +287,7 @@ func (c *WikiStatsController) Login(ctx *web.RequestCtx) {
 		return
 	}
 
-	userDB, exists, err := c.database.GetUser(ctx.Request().Context(), login.Username)
+	userDB, exists, err := c.dbAdapter.GetUser(ctx.Request().Context(), login.Username)
 	if err != nil {
 		ctx.Logger().Error("Failed to login", slog.Any("err", err), slog.String("user", login.Username))
 		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("internal server error: %w", err))

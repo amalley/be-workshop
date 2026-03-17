@@ -11,10 +11,10 @@ import (
 	"net/http"
 	neturl "net/url"
 
-	"github.com/AMalley/be-workshop/ch-5/api/database"
-	"github.com/AMalley/be-workshop/ch-5/api/stream"
-	"github.com/AMalley/be-workshop/ch-5/api/utils"
-	"github.com/AMalley/be-workshop/ch-5/models"
+	"github.com/amalley/be-workshop/ch-5/api/database"
+	"github.com/amalley/be-workshop/ch-5/api/stream"
+	"github.com/amalley/be-workshop/ch-5/api/utils"
+	"github.com/amalley/be-workshop/ch-5/models"
 )
 
 var dataTag = []byte("data: ")
@@ -30,22 +30,22 @@ type WikiStreamAdapter struct {
 	stream io.ReadCloser
 	client wikiStreamRequestDoer
 
-	database database.DatabaseAdapter
+	dbWriter database.Writer
 
 	logger *slog.Logger
 	url    *neturl.URL
 }
 
 // NewWikiStreamAdapter returns a new Wiki stream adapter using http.DefaultClient as the underlying request doer.
-func NewWikiStreamAdapter(logger *slog.Logger, database database.DatabaseAdapter, url *neturl.URL) *WikiStreamAdapter {
-	return NewWikiStreamAdapterWithClient(logger, database, http.DefaultClient, url)
+func NewWikiStreamAdapter(logger *slog.Logger, dbWriter database.Writer, url *neturl.URL) *WikiStreamAdapter {
+	return NewWikiStreamAdapterWithClient(logger, dbWriter, http.DefaultClient, url)
 }
 
 // NewWikiStreamAdapterWithClient returns a new Wiki stream adapter using the provided client as the underlying request doer.
-func NewWikiStreamAdapterWithClient(logger *slog.Logger, database database.DatabaseAdapter, client wikiStreamRequestDoer, url *neturl.URL) *WikiStreamAdapter {
+func NewWikiStreamAdapterWithClient(logger *slog.Logger, dbWriter database.Writer, client wikiStreamRequestDoer, url *neturl.URL) *WikiStreamAdapter {
 	return &WikiStreamAdapter{
 		logger:   logger.With(slog.String("src", "WikiStreamAdapter")),
-		database: database,
+		dbWriter: dbWriter,
 		client:   client,
 		url:      url,
 	}
@@ -108,10 +108,8 @@ func (a *WikiStreamAdapter) consumeStream(ctx context.Context) error {
 			return cerr
 		}
 
-		if a.database.IsReady() {
-			if err := a.consumeChunk(ctx, chunk); err != nil {
-				return utils.CtxErr(ctx, err)
-			}
+		if err := a.consumeChunk(ctx, chunk); err != nil {
+			return utils.CtxErr(ctx, err)
 		}
 	}
 }
@@ -129,7 +127,7 @@ func (a *WikiStreamAdapter) consumeChunk(ctx context.Context, chunk []byte) erro
 		return err
 	}
 
-	return a.database.InsertStats(ctx, models.WikiStatsModel{
+	return a.dbWriter.InsertStats(ctx, models.WikiStatsModel{
 		Message: message.Meta.ID,
 		User:    message.User,
 		Server:  message.ServerName,
