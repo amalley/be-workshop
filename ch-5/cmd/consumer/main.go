@@ -20,14 +20,10 @@ import (
 
 func main() {
 	args := cli.ParseArgs()
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
 	mux := http.NewServeMux()
 	lgr := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: cli.ParseLogLevel(args.LogLevel),
-	}))
+	})).With("app", "wikistats-consumer")
 
 	mdl := middleware.NewMiddlewareRegistry()
 	mdl.Use(middleware.PanicRecover(lgr))
@@ -44,6 +40,9 @@ func main() {
 
 	ctl := wikistats.NewWikiStatsController(lgr, syl, pub)
 	ctl.RegisterRoutes(mux)
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 
 	server.NewServer(
 		server.WithAddress(":"+args.Port),

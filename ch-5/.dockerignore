@@ -6,5 +6,6 @@
 !go.sum
 !.env
 !api/
+!cli/
 !cmd/
 !models/

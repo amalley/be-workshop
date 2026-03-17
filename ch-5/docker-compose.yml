@@ -15,10 +15,12 @@ services:
     volumes:
       - scylla_data:/var/lib/scylla
 
-  wikistats:
+  wikistats-consumer:
+    container_name: wikistats-consumer
     build:
       context: .
       dockerfile: Dockerfile
+    command: ["./wikistats-consumer"]
     env_file:
       - .env
     ports:
@@ -29,6 +31,20 @@ services:
       timeout: 3s
       retries: 5
       start_period: 15s 
+    networks:
+      - wikistats-networks
+    depends_on:
+      scylla:
+        condition: service_healthy
+
+  wikistats-producer:
+    container_name: wikistats-producer
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["./wikistats-producer"]
+    env_file:
+      - .env
     networks:
       - wikistats-networks
     depends_on:

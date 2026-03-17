@@ -14,10 +14,11 @@ RUN go mod download
 
 # Now copy everything else (overwritting mod and sum, that's fine) into our working directory
 # Note: the .dockerignore will ensure only what we want copied is allowed to be. You may see warnings in the build log
-COPY . ./
+COPY . .
 
 # Finally build our application
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o wikistats-consumer ./cmd/consumer/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /wikistats-consumer ./cmd/consumer/main.go && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /wikistats-producer ./cmd/producer/main.go
 
 # Stage 2: Build the minimal runtime image
 FROM alpine:latest
@@ -26,7 +27,8 @@ FROM alpine:latest
 WORKDIR /app
 
 # Copy the binary from build stage
-COPY --from=builder /app/wikistats-consumer ./
+COPY --from=builder /wikistats-consumer ./wikistats-consumer
+COPY --from=builder /wikistats-producer ./wikistats-producer
 
-# Set the entry point as the application
-ENTRYPOINT ["/app/wikistats-consumer"]
+# Default command to run the application
+CMD ["/app/wikistats-consumer"]
