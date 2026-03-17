@@ -1,16 +1,31 @@
 name: WikiStats Tests
-on: [pull_request]
+on: pull_request
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.1'
+        
+      - name: Run linters
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          golangci-lint run ./api/...
+
   tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup. Go 1.26.1
-        uses: actions/setup-go@v4
+      - name: Setup Go
+        uses: actions/setup-go@v6
         with:
-          go-version: 1.26.1
+          go-version: '1.26.1'
         
       - name: Run tests
         run: go test -v ./api/...
