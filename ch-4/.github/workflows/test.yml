@@ -1,0 +1,16 @@
+name: WikiStats Tests
+on: [pull_request]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup. Go 1.26.1
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.26.1
+        
+      - name: Run tests
+        run: go test -v ./api/...
