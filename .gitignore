@@ -30,6 +30,7 @@ go.work.sum
 !ch-2/.env
 !ch-3/.env
 !ch-4/.env
+!ch-5/.env
 
 # Editor/IDE
 # .idea/

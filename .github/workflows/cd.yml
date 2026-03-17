@@ -4,7 +4,7 @@ on:
     branches: [ main ]
 
 env:
-  WORKING_DIR: ./ch-4
+  WORKING_DIR: ./ch-5
 
 jobs:
 
