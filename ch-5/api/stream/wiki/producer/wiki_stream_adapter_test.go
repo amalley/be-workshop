@@ -1,4 +1,4 @@
-package wiki
+package producer
 
 // var ErrMockConnectErr = errors.New("Mock Connect Err")
 

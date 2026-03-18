@@ -9,20 +9,16 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
-	"time"
 
-	"github.com/amalley/be-workshop/ch-5/api/database"
-	"github.com/amalley/be-workshop/ch-5/api/database/scylla"
 	"github.com/amalley/be-workshop/ch-5/api/handlers/producer"
 	"github.com/amalley/be-workshop/ch-5/api/middleware"
 	"github.com/amalley/be-workshop/ch-5/api/server"
 	"github.com/amalley/be-workshop/ch-5/api/stream"
 	"github.com/amalley/be-workshop/ch-5/api/stream/wiki"
+	wikiproducer "github.com/amalley/be-workshop/ch-5/api/stream/wiki/producer"
 	"github.com/amalley/be-workshop/ch-5/api/utils"
 	"github.com/amalley/be-workshop/ch-5/cli"
-	"github.com/gocql/gocql"
 )
 
 func main() {
@@ -30,8 +26,6 @@ func main() {
 		Port:         cli.GetEnv("PORT", "7000"),
 		LogLevel:     cli.GetEnv("LOG_LEVEL", "info"),
 		URL:          cli.GetEnv("STREAM_URL", "https://stream.wikimedia.org/v2/stream/recentchange"),
-		DBHost:       cli.GetEnv("DB_HOST", "scylla"),
-		DBKeyspace:   cli.GetEnv("DB_KEYSPACE", "wikistats"),
 		KafkaBrokers: cli.GetEnv("KAFKA_BROKERS", "localhost:9092"),
 		KafkaTopic:   cli.GetEnv("KAFKA_TOPIC", "wikistats"),
 	})
@@ -39,16 +33,7 @@ func main() {
 	mux := http.NewServeMux()
 	lgr := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: cli.ParseLogLevel(args.LogLevel),
-	})).With("svc", "wikistats-producer")
-
-	syl := scylla.NewScyllaDatabaseAdapter(
-		scylla.WithLogger(lgr),
-		scylla.WithHost(args.DBHost),
-		scylla.WithKeyspace(args.DBKeyspace),
-		scylla.WithClusterConsistency(gocql.Quorum),
-		scylla.WithConnectionTimeout(5*time.Second),
-		scylla.WithRetryTime(5*time.Second),
-	)
+	})).With("src", "wikistats-producer")
 
 	u, err := url.Parse(args.URL)
 	if err != nil {
@@ -56,7 +41,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	stm := wiki.NewWikiStreamAdapter(
+	adp := wikiproducer.NewStreamAdapter(
 		wiki.WithLogger(lgr),
 		wiki.WithURL(u),
 		wiki.WithTopic(args.KafkaTopic),
@@ -77,45 +62,25 @@ func main() {
 		server.WithAddress(":"+args.Port),
 		server.WithHandler(mdl.Resolve(mux)),
 		server.WithLogger(lgr),
-		server.WithStartupHook(startup(lgr, syl, stm)),
-		server.WithShutdownHook(shutdown(lgr, syl, stm)),
+		server.WithStartupHook(startup(lgr, adp)),
+		server.WithShutdownHook(shutdown(lgr, adp)),
 	).Run(ctx)
 }
 
-func startup(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stream.StreamAdapter) func(context.Context) error {
+func startup(logger *slog.Logger, streamAdapter stream.StreamAdapter) func(context.Context) error {
 	return func(ctx context.Context) error {
 		if utils.CtxDone(ctx) {
 			logger.Info("failed to start", slog.Any("reason", ctx.Err().Error()))
 			return ctx.Err()
 		}
 
-		var grp sync.WaitGroup
-		grp.Go(func() {
-			if err := dbAdapter.Connect(ctx); err != nil {
-				logger.Error("failed to connect to database", "error", err.Error())
-				return
-			}
-		})
-		grp.Go(func() {
-			if err := streamAdapter.Connect(ctx); err != nil {
-				logger.Error("failed to connect to stream", "error", err.Error())
-				return
-			}
-		})
-		grp.Wait()
-
-		wait := time.NewTicker(time.Second * 2)
-		defer wait.Stop()
-
-		for !dbAdapter.IsReady() {
-			logger.Info("Waiting for database to be ready...")
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-wait.C:
-			}
+		if err := streamAdapter.Connect(ctx); err != nil {
+			logger.Error("failed to connect to stream", "error", err.Error())
+			return err
 		}
 
+		// Start consuming in a separate goroutine to avoid blocking the startup process.
+		// The stream adapter will handle reconnection logic internally, so we don't need to worry about that here.
 		go func() {
 			if err := streamAdapter.Consume(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				logger.Error("stream consumption ended with error", "error", err.Error())
@@ -126,14 +91,10 @@ func startup(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stre
 	}
 }
 
-func shutdown(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stream.StreamAdapter) func(context.Context) error {
+func shutdown(logger *slog.Logger, streamAdapter stream.StreamAdapter) func(context.Context) error {
 	return func(ctx context.Context) error {
 		if err := streamAdapter.Close(ctx); err != nil {
 			logger.Error("failed to close stream adapter", "error", err.Error())
-		}
-
-		if err := dbAdapter.Close(ctx); err != nil {
-			logger.Error("failed to close database adapter", "error", err.Error())
 		}
 		return nil
 	}

@@ -1,4 +1,4 @@
-package wiki
+package producer
 
 import (
 	"bufio"
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/amalley/be-workshop/ch-5/api/stream"
+	"github.com/amalley/be-workshop/ch-5/api/stream/wiki"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -23,28 +24,29 @@ var (
 	ErrAlreadyConnected = errors.New("already connected to stream")
 )
 
-var _ stream.StreamAdapter = &WikiStreamAdapter{}
+var _ stream.StreamAdapter = &WikiStreamAdapterProducer{}
 
-type WikiStreamAdapter struct {
-	cfg    *WikiStreamOptions
+type WikiStreamAdapterProducer struct {
+	cfg    *wiki.WikiStreamOptions
 	client *kgo.Client
 
 	LastEventID string
 }
 
-// NewWikiStreamAdapter returns a new Wiki stream adapter using http.DefaultClient as the underlying request doer.
-func NewWikiStreamAdapter(options ...WikiStreamOption) *WikiStreamAdapter {
+// NewStreamAdapter returns a new Wiki stream adapter using http.DefaultClient as the underlying request doer.
+func NewStreamAdapter(options ...wiki.WikiStreamOption) *WikiStreamAdapterProducer {
 	return NewWikiStreamAdapterWithClient(options...)
 }
 
 // NewWikiStreamAdapterWithClient returns a new Wiki stream adapter using the provided client as the underlying request doer.
-func NewWikiStreamAdapterWithClient(options ...WikiStreamOption) *WikiStreamAdapter {
-	cfg := applyWikiStreamOptions(defaultWikiStreamOptions(), options...)
-	return &WikiStreamAdapter{cfg: cfg, client: nil}
+func NewWikiStreamAdapterWithClient(options ...wiki.WikiStreamOption) *WikiStreamAdapterProducer {
+	cfg := wiki.ApplyWikiStreamOptions(wiki.DefaultWikiStreamOptions(), options...)
+	cfg.Logger = cfg.Logger.With("src", "WikiStreamAdapterProducer")
+	return &WikiStreamAdapterProducer{cfg: cfg, client: nil}
 }
 
 // Connect established a connection to the Wiki media stream
-func (a *WikiStreamAdapter) Connect(ctx context.Context) error {
+func (a *WikiStreamAdapterProducer) Connect(ctx context.Context) error {
 	if a.client != nil {
 		return ErrAlreadyConnected
 	}
@@ -64,17 +66,29 @@ func (a *WikiStreamAdapter) Connect(ctx context.Context) error {
 	return nil
 }
 
+// Close ensure the stream if closed. Does nothing if the adapter is not connected to a stream.
+func (a *WikiStreamAdapterProducer) Close(ctx context.Context) error {
+	if a.client == nil {
+		return nil
+	}
+
+	a.client.Close()
+	a.client = nil
+
+	return nil
+}
+
 // Consume starts consuming the stream and producing messages to Kafka.
 // If the connection to the stream is lost, it will attempt to reconnect with an exponential backoff strategy.
 // The context can be used to signal the adapter to stop consuming and close the connection to the stream.
-func (a *WikiStreamAdapter) Consume(ctx context.Context) error {
+func (a *WikiStreamAdapterProducer) Consume(ctx context.Context) error {
 	if a.client == nil {
 		return ErrNotConnected
 	}
 
 	backoff := time.Second
 
-	a.cfg.Logger.Info("connecting to wiki stream", slog.Any("url", a.cfg.URL))
+	a.cfg.Logger.Info("connecting to wiki stream", slog.String("url", a.cfg.URL.String()))
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -113,19 +127,7 @@ func (a *WikiStreamAdapter) Consume(ctx context.Context) error {
 	}
 }
 
-// Close ensure the stream if closed. Does nothing if the adapter is not connected to a stream.
-func (a *WikiStreamAdapter) Close(ctx context.Context) error {
-	if a.client == nil {
-		return nil
-	}
-
-	a.client.Close()
-	a.client = nil
-
-	return nil
-}
-
-func (a *WikiStreamAdapter) readStream(ctx context.Context, stream io.ReadCloser) error {
+func (a *WikiStreamAdapterProducer) readStream(ctx context.Context, stream io.ReadCloser) error {
 	const maxLineSize = 10 * 1024 * 1024 // 10MB
 	reader := bufio.NewReaderSize(stream, maxLineSize)
 
@@ -172,7 +174,7 @@ func (a *WikiStreamAdapter) readStream(ctx context.Context, stream io.ReadCloser
 	}
 }
 
-func (a *WikiStreamAdapter) connectStream(ctx context.Context) (io.ReadCloser, error) {
+func (a *WikiStreamAdapterProducer) connectStream(ctx context.Context) (io.ReadCloser, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.cfg.URL.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %s", err.Error())
@@ -187,7 +189,6 @@ func (a *WikiStreamAdapter) connectStream(ctx context.Context) (io.ReadCloser, e
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform request: %s", err.Error())
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)

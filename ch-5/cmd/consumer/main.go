@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -16,6 +18,9 @@ import (
 	"github.com/amalley/be-workshop/ch-5/api/handlers/consumer"
 	"github.com/amalley/be-workshop/ch-5/api/middleware"
 	"github.com/amalley/be-workshop/ch-5/api/server"
+	"github.com/amalley/be-workshop/ch-5/api/stream"
+	"github.com/amalley/be-workshop/ch-5/api/stream/wiki"
+	wikiconsumer "github.com/amalley/be-workshop/ch-5/api/stream/wiki/consumer"
 	"github.com/amalley/be-workshop/ch-5/api/utils"
 	"github.com/amalley/be-workshop/ch-5/cli"
 	"github.com/gocql/gocql"
@@ -23,16 +28,18 @@ import (
 
 func main() {
 	args := cli.ParseArgs(&cli.Args{
-		Port:       cli.GetEnv("PORT", "7000"),
-		LogLevel:   cli.GetEnv("LOG_LEVEL", "debug"),
-		DBHost:     cli.GetEnv("DB_HOST", "scylla"),
-		DBKeyspace: cli.GetEnv("DB_KEYSPACE", "wikistats"),
+		Port:         cli.GetEnv("PORT", "7000"),
+		LogLevel:     cli.GetEnv("LOG_LEVEL", "debug"),
+		DBHost:       cli.GetEnv("DB_HOST", "scylla"),
+		DBKeyspace:   cli.GetEnv("DB_KEYSPACE", "wikistats"),
+		KafkaBrokers: cli.GetEnv("KAFKA_BROKERS", "localhost:9092"),
+		KafkaTopic:   cli.GetEnv("KAFKA_TOPIC", "wikistats"),
 	})
 
 	mux := http.NewServeMux()
 	lgr := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: cli.ParseLogLevel(args.LogLevel),
-	})).With("svc", "wikistats-consumer")
+	})).With("src", "wikistats-consumer")
 
 	syl := scylla.NewScyllaDatabaseAdapter(
 		scylla.WithLogger(lgr),
@@ -41,6 +48,14 @@ func main() {
 		scylla.WithClusterConsistency(gocql.Quorum),
 		scylla.WithConnectionTimeout(5*time.Second),
 		scylla.WithRetryTime(5*time.Second),
+	)
+
+	adp := wikiconsumer.NewStreamAdapter(
+		wiki.WithLogger(lgr),
+		wiki.WithBrokers(strings.Split(args.KafkaBrokers, ",")),
+		wiki.WithTopic(args.KafkaTopic),
+		wiki.WithRetryAttempts(args.KafkaRetryAttempts),
+		wiki.WithFetchMaxWait(500*time.Millisecond),
 	)
 
 	pub := public.NewPublicAuthenticator(lgr)
@@ -58,12 +73,12 @@ func main() {
 		server.WithAddress(":"+args.Port),
 		server.WithHandler(mdl.Resolve(mux)),
 		server.WithLogger(lgr),
-		server.WithStartupHook(startup(lgr, syl)),
-		server.WithShutdownHook(shutdown(lgr, syl)),
+		server.WithStartupHook(startup(lgr, syl, adp)),
+		server.WithShutdownHook(shutdown(lgr, syl, adp)),
 	).Run(ctx)
 }
 
-func startup(logger *slog.Logger, dbAdapter database.Adapter) server.ServerHook {
+func startup(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stream.StreamAdapter) server.ServerHook {
 	return func(ctx context.Context) error {
 		if utils.CtxDone(ctx) {
 			logger.Info("failed to start", slog.String("reason", ctx.Err().Error()))
@@ -72,51 +87,76 @@ func startup(logger *slog.Logger, dbAdapter database.Adapter) server.ServerHook 
 
 		var grp sync.WaitGroup
 		grp.Go(func() {
+			if err := streamAdapter.Connect(ctx); err != nil {
+				logger.Error("failed to connect to stream adapter", slog.Any("err", err))
+			}
+		})
+		grp.Go(func() {
 			if err := dbAdapter.Connect(ctx); err != nil {
-				logger.Error("Failed to connect to database", slog.Any("err", err))
+				logger.Error("failed to connect to database", slog.Any("err", err))
 			}
 		})
 		grp.Wait()
 
-		wait := time.NewTicker(time.Second * 2)
-		defer wait.Stop()
+		if err := waitForDatabase(ctx, logger, dbAdapter); err != nil {
+			logger.Error("failed while waiting for database to be ready", slog.Any("err", err))
+			return err
+		}
 
-		for !dbAdapter.IsReady() {
-			logger.Info("Waiting for database to be ready...")
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-wait.C:
+		// Start consuming in a separate goroutine to avoid blocking the startup process.
+		// The stream adapter will handle reconnection logic internally, so we don't need to worry about that here.
+		go func() {
+			if err := streamAdapter.Consume(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				logger.Error("stream consumption ended with error", slog.Any("err", err))
 			}
-		}
-
-		_, exists, err := dbAdapter.GetUser(ctx, "admin")
-		if err != nil {
-			logger.Error("Failed to get default user", slog.Any("err", err))
-		}
-
-		if !exists {
-			// Don't do this in production
-			if err := dbAdapter.CreateUser(ctx, "admin", "password"); err != nil {
-				logger.Error("Failed to create default user", slog.Any("err", err))
-			}
-		}
+		}()
 
 		return nil
 	}
 }
 
-func shutdown(logger *slog.Logger, dbAdapter database.Adapter) server.ServerHook {
+func shutdown(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stream.StreamAdapter) server.ServerHook {
 	return func(ctx context.Context) error {
 		if utils.CtxDone(ctx) {
 			logger.Info("failed to shutdown", slog.String("reason", ctx.Err().Error()))
 			return ctx.Err()
 		}
 
+		if err := streamAdapter.Close(ctx); err != nil {
+			logger.Error("failed to close stream adapter", slog.Any("err", err))
+		}
+
 		if err := dbAdapter.Close(ctx); err != nil {
-			logger.Error("Failed to close database", slog.Any("err", err))
+			logger.Error("failed to close database", slog.Any("err", err))
 		}
 
 		return nil
 	}
+}
+
+func waitForDatabase(ctx context.Context, logger *slog.Logger, dbAdapter database.Adapter) error {
+	wait := time.NewTicker(time.Second * 2)
+	defer wait.Stop()
+
+	for !dbAdapter.IsReady() {
+		logger.Info("Waiting for database to be ready...")
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-wait.C:
+		}
+	}
+
+	_, exists, err := dbAdapter.GetUser(ctx, "admin")
+	if err != nil {
+		logger.Error("Failed to get default user", slog.Any("err", err))
+	}
+
+	if !exists {
+		// Don't do this in production
+		if err := dbAdapter.CreateUser(ctx, "admin", "password"); err != nil {
+			logger.Error("Failed to create default user", slog.Any("err", err))
+		}
+	}
+	return nil
 }

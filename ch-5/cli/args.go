@@ -19,28 +19,16 @@ type Args struct {
 }
 
 func ParseArgs(defaults *Args) *Args {
-	args := &Args{
-		defaults.Port,
-		defaults.URL,
-		defaults.LogLevel,
-		defaults.DBHost,
-		defaults.DBKeyspace,
-		defaults.KafkaBrokers,
-		defaults.KafkaTopic,
-		defaults.KafkaRetryAttempts,
-	}
-
-	flag.StringVar(&args.Port, "port", args.Port, "Port to listen on")
-	flag.StringVar(&args.URL, "url", args.URL, "WikiMedia stream url")
-	flag.StringVar(&args.LogLevel, "log-level", args.LogLevel, "Application's log level (debug, info, warning, error)")
-	flag.StringVar(&args.DBHost, "db-host", args.DBHost, "Database host")
-	flag.StringVar(&args.DBKeyspace, "db-keyspace", args.DBKeyspace, "Database keyspace")
-	flag.StringVar(&args.KafkaBrokers, "kafka-brokers", args.KafkaBrokers, "Comma-separated list of Kafka brokers")
-	flag.StringVar(&args.KafkaTopic, "kafka-topic", args.KafkaTopic, "Kafka topic to produce to / consume from")
-	flag.IntVar(&args.KafkaRetryAttempts, "kafka-retry-attempts", args.KafkaRetryAttempts, "Number of retry attempts for Kafka operations")
+	flag.StringVar(&defaults.Port, "port", defaults.Port, "Port to listen on")
+	flag.StringVar(&defaults.URL, "url", defaults.URL, "WikiMedia stream url")
+	flag.StringVar(&defaults.LogLevel, "log-level", defaults.LogLevel, "Application's log level (debug, info, warning, error)")
+	flag.StringVar(&defaults.DBHost, "db-host", defaults.DBHost, "Database host")
+	flag.StringVar(&defaults.DBKeyspace, "db-keyspace", defaults.DBKeyspace, "Database keyspace")
+	flag.StringVar(&defaults.KafkaBrokers, "kafka-brokers", defaults.KafkaBrokers, "Comma-separated list of Kafka brokers")
+	flag.StringVar(&defaults.KafkaTopic, "kafka-topic", defaults.KafkaTopic, "Kafka topic to produce to / consume from")
+	flag.IntVar(&defaults.KafkaRetryAttempts, "kafka-retry-attempts", defaults.KafkaRetryAttempts, "Number of retry attempts for Kafka operations")
 	flag.Parse()
-
-	return args
+	return defaults
 }
 
 func ParseLogLevel(level string) slog.Level {

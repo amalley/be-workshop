@@ -72,8 +72,6 @@ services:
     networks:
       - wikistats-networks
     depends_on:
-      scylla:
-        condition: service_healthy
       redpanda:
         condition: service_healthy
 

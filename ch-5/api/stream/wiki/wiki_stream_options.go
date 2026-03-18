@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/amalley/be-workshop/ch-5/api/web"
 )
@@ -17,6 +18,20 @@ type WikiStreamOptions struct {
 	Topic         string
 	Brokers       []string
 	RetryAttempts int
+	FetchMaxWait  time.Duration
+	FetchMinBytes int32
+}
+
+func WithFetchMaxWait(wait time.Duration) WikiStreamOption {
+	return func(opts *WikiStreamOptions) {
+		opts.FetchMaxWait = wait
+	}
+}
+
+func WithFetchMinBytes(bytes int32) WikiStreamOption {
+	return func(opts *WikiStreamOptions) {
+		opts.FetchMinBytes = bytes
+	}
 }
 
 func WithDoer(doer web.RequestDoer) WikiStreamOption {
@@ -39,7 +54,7 @@ func WithLogger(logger *slog.Logger) WikiStreamOption {
 		logger = slog.Default()
 	}
 	return func(opts *WikiStreamOptions) {
-		opts.Logger = logger.With(slog.String("src", "WikiStreamAdapter"))
+		opts.Logger = logger
 	}
 }
 
@@ -61,7 +76,7 @@ func WithBrokers(brokers []string) WikiStreamOption {
 	}
 }
 
-func defaultWikiStreamOptions() *WikiStreamOptions {
+func DefaultWikiStreamOptions() *WikiStreamOptions {
 	return &WikiStreamOptions{
 		Logger:        slog.Default().With(slog.String("src", "WikiStreamAdapter")),
 		URL:           nil,
@@ -69,10 +84,12 @@ func defaultWikiStreamOptions() *WikiStreamOptions {
 		Brokers:       []string{},
 		RetryAttempts: 5,
 		Doer:          http.DefaultClient,
+		FetchMaxWait:  100 * time.Millisecond,
+		FetchMinBytes: 1024 * 10, // 10KB
 	}
 }
 
-func applyWikiStreamOptions(opts *WikiStreamOptions, options ...WikiStreamOption) *WikiStreamOptions {
+func ApplyWikiStreamOptions(opts *WikiStreamOptions, options ...WikiStreamOption) *WikiStreamOptions {
 	for _, opt := range options {
 		opt(opts)
 	}

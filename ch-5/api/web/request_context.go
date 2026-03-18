@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 )
@@ -8,11 +9,16 @@ import (
 // WebHandlerFunc defines the signature of a web handler function that accepts a custom RequestCtx.
 type WebHandlerFunc func(ctx *RequestCtx)
 
-// WithRequestCtx is a middleware that wraps a WebHandlerFunc, creating a RequestCtx for each incoming
-// HTTP request and passing it to the handler.
+// WithRequestCtx is a middleware that wraps a WebHandlerFunc, creating a RequestCtx for each
+// incoming HTTP request and passing it to the handler.
 func WithRequestCtx(logger *slog.Logger, handler WebHandlerFunc) http.HandlerFunc {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	if handler == nil {
+		handler = func(ctx *RequestCtx) {
+			ctx.SendError(http.StatusNotFound, errors.New("not found"))
+		}
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := NewRequestCtx(logger, w, r)
