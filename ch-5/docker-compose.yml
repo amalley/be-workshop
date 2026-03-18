@@ -16,7 +16,7 @@ services:
       - scylla_data:/var/lib/scylla
 
   redpanda:
-    image: docker.redpanda.com/redpandadata/redpanda:latest
+    image: redpandadata/redpanda:v23.3.13
     container_name: redpanda
     command:
       - redpanda start
@@ -39,6 +39,19 @@ services:
       - "29092:29092"
     networks:
       - wikistats-networks
+
+  console:
+    image: redpandadata/console:latest
+    container_name: redpanda-console
+    networks:
+      - wikistats-networks
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    depends_on:
+      redpanda:
+        condition: service_healthy
 
   wikistats-producer:
     container_name: wikistats-producer

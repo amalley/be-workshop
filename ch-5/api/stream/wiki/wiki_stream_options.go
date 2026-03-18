@@ -1,0 +1,80 @@
+package wiki
+
+import (
+	"log/slog"
+	"net/http"
+	"net/url"
+
+	"github.com/amalley/be-workshop/ch-5/api/web"
+)
+
+type WikiStreamOption func(*WikiStreamOptions)
+
+type WikiStreamOptions struct {
+	Logger        *slog.Logger
+	URL           *url.URL
+	Doer          web.RequestDoer
+	Topic         string
+	Brokers       []string
+	RetryAttempts int
+}
+
+func WithDoer(doer web.RequestDoer) WikiStreamOption {
+	if doer == nil {
+		doer = http.DefaultClient
+	}
+	return func(opts *WikiStreamOptions) {
+		opts.Doer = doer
+	}
+}
+
+func WithRetryAttempts(attempts int) WikiStreamOption {
+	return func(opts *WikiStreamOptions) {
+		opts.RetryAttempts = attempts
+	}
+}
+
+func WithLogger(logger *slog.Logger) WikiStreamOption {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return func(opts *WikiStreamOptions) {
+		opts.Logger = logger.With(slog.String("src", "WikiStreamAdapter"))
+	}
+}
+
+func WithURL(url *url.URL) WikiStreamOption {
+	return func(opts *WikiStreamOptions) {
+		opts.URL = url
+	}
+}
+
+func WithTopic(topic string) WikiStreamOption {
+	return func(opts *WikiStreamOptions) {
+		opts.Topic = topic
+	}
+}
+
+func WithBrokers(brokers []string) WikiStreamOption {
+	return func(opts *WikiStreamOptions) {
+		opts.Brokers = brokers
+	}
+}
+
+func defaultWikiStreamOptions() *WikiStreamOptions {
+	return &WikiStreamOptions{
+		Logger:        slog.Default().With(slog.String("src", "WikiStreamAdapter")),
+		URL:           nil,
+		Topic:         "",
+		Brokers:       []string{},
+		RetryAttempts: 5,
+		Doer:          http.DefaultClient,
+	}
+}
+
+func applyWikiStreamOptions(opts *WikiStreamOptions, options ...WikiStreamOption) *WikiStreamOptions {
+	for _, opt := range options {
+		opt(opts)
+	}
+	return opts
+}

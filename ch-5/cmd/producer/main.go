@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -25,11 +26,13 @@ import (
 
 func main() {
 	args := cli.ParseArgs(&cli.Args{
-		Port:       cli.GetEnv("PORT", "7000"),
-		LogLevel:   cli.GetEnv("LOG_LEVEL", "info"),
-		URL:        cli.GetEnv("STREAM_URL", "https://stream.wikimedia.org/v2/stream/recentchange"),
-		DBHost:     cli.GetEnv("DB_HOST", "scylla"),
-		DBKeyspace: cli.GetEnv("DB_KEYSPACE", "wikistats"),
+		Port:         cli.GetEnv("PORT", "7000"),
+		LogLevel:     cli.GetEnv("LOG_LEVEL", "info"),
+		URL:          cli.GetEnv("STREAM_URL", "https://stream.wikimedia.org/v2/stream/recentchange"),
+		DBHost:       cli.GetEnv("DB_HOST", "scylla"),
+		DBKeyspace:   cli.GetEnv("DB_KEYSPACE", "wikistats"),
+		KafkaBrokers: cli.GetEnv("KAFKA_BROKERS", "localhost:9092"),
+		KafkaTopic:   cli.GetEnv("KAFKA_TOPIC", "wikistats"),
 	})
 
 	mux := http.NewServeMux()
@@ -37,7 +40,8 @@ func main() {
 		Level: cli.ParseLogLevel(args.LogLevel),
 	})).With("svc", "wikistats-producer")
 
-	syl := scylla.NewScyllaDatabaseAdapter(lgr,
+	syl := scylla.NewScyllaDatabaseAdapter(
+		scylla.WithLogger(lgr),
 		scylla.WithHost(args.DBHost),
 		scylla.WithKeyspace(args.DBKeyspace),
 		scylla.WithClusterConsistency(gocql.Quorum),
@@ -50,7 +54,14 @@ func main() {
 		lgr.Error("fatal: unable to parse stream URL", "url", args.URL, "error", err.Error())
 		os.Exit(1)
 	}
-	stm := wiki.NewWikiStreamAdapter(lgr, syl, u)
+
+	stm := wiki.NewWikiStreamAdapter(
+		wiki.WithLogger(lgr),
+		wiki.WithURL(u),
+		wiki.WithTopic(args.KafkaTopic),
+		wiki.WithBrokers(strings.Split(args.KafkaBrokers, ",")),
+		wiki.WithRetryAttempts(args.KafkaRetryAttempts),
+	)
 
 	hld := producer.NewProducerHandlers(lgr)
 	hld.RegisterHandlers(mux)

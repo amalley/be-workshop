@@ -46,17 +46,13 @@ const (
 var _ database.Adapter = &ScyllaDatabaseAdapter{}
 
 type ScyllaDatabaseAdapter struct {
-	logger  *slog.Logger
 	session *gocql.Session
 	cfg     *ScyllaOptions
 }
 
-func NewScyllaDatabaseAdapter(logger *slog.Logger, opts ...ScyllaOption) *ScyllaDatabaseAdapter {
+func NewScyllaDatabaseAdapter(opts ...ScyllaOption) *ScyllaDatabaseAdapter {
 	cfg := applyOptions(defaultOptions(), opts...)
-	return &ScyllaDatabaseAdapter{
-		logger: logger.With(slog.String("src", "ScyllaDatabaseAdapter")),
-		cfg:    cfg,
-	}
+	return &ScyllaDatabaseAdapter{cfg: cfg}
 }
 
 func (s *ScyllaDatabaseAdapter) Connect(ctx context.Context) error {
@@ -98,7 +94,7 @@ func (s *ScyllaDatabaseAdapter) tryConnent(ctx context.Context) error {
 	defer retry.Stop()
 
 	for {
-		s.logger.Info("Attempting to connect to Scylla cluster...")
+		s.cfg.Logger.Info("Attempting to connect to Scylla cluster...")
 
 		select {
 		case <-ctx.Done():
@@ -118,12 +114,12 @@ func (s *ScyllaDatabaseAdapter) tryConnent(ctx context.Context) error {
 
 			session, err := cluster.CreateSession()
 			if err != nil {
-				s.logger.Info("Scylla connection fail, retrying...", slog.Any("err", err))
+				s.cfg.Logger.Info("Scylla connection fail, retrying...", slog.Any("err", err))
 				continue
 			}
 
 			s.session = session
-			s.logger.Info("Scylla connection established")
+			s.cfg.Logger.Info("Scylla connection established")
 			return nil
 		}
 	}
@@ -143,7 +139,7 @@ func (s *ScyllaDatabaseAdapter) tryCreateKeyspace(ctx context.Context) error {
 		}
 	}
 
-	s.logger.Info("Scylla keyspace and tables ensured")
+	s.cfg.Logger.Info("Scylla keyspace and tables ensured")
 	return nil
 }
 

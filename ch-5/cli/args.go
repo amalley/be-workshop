@@ -8,11 +8,14 @@ import (
 )
 
 type Args struct {
-	Port       string
-	URL        string
-	LogLevel   string
-	DBHost     string
-	DBKeyspace string
+	Port               string
+	URL                string
+	LogLevel           string
+	DBHost             string
+	DBKeyspace         string
+	KafkaBrokers       string
+	KafkaTopic         string
+	KafkaRetryAttempts int
 }
 
 func ParseArgs(defaults *Args) *Args {
@@ -22,6 +25,9 @@ func ParseArgs(defaults *Args) *Args {
 		defaults.LogLevel,
 		defaults.DBHost,
 		defaults.DBKeyspace,
+		defaults.KafkaBrokers,
+		defaults.KafkaTopic,
+		defaults.KafkaRetryAttempts,
 	}
 
 	flag.StringVar(&args.Port, "port", args.Port, "Port to listen on")
@@ -29,6 +35,9 @@ func ParseArgs(defaults *Args) *Args {
 	flag.StringVar(&args.LogLevel, "log-level", args.LogLevel, "Application's log level (debug, info, warning, error)")
 	flag.StringVar(&args.DBHost, "db-host", args.DBHost, "Database host")
 	flag.StringVar(&args.DBKeyspace, "db-keyspace", args.DBKeyspace, "Database keyspace")
+	flag.StringVar(&args.KafkaBrokers, "kafka-brokers", args.KafkaBrokers, "Comma-separated list of Kafka brokers")
+	flag.StringVar(&args.KafkaTopic, "kafka-topic", args.KafkaTopic, "Kafka topic to produce to / consume from")
+	flag.IntVar(&args.KafkaRetryAttempts, "kafka-retry-attempts", args.KafkaRetryAttempts, "Number of retry attempts for Kafka operations")
 	flag.Parse()
 
 	return args

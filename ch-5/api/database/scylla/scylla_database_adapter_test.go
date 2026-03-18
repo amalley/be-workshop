@@ -69,7 +69,8 @@ func TestScyllaIntegration(t *testing.T) {
 	logger := slog.Default()
 	logger.Info("Scylla container started", "address", address)
 
-	adapter := scylla.NewScyllaDatabaseAdapter(logger,
+	adapter := scylla.NewScyllaDatabaseAdapter(
+		scylla.WithLogger(logger),
 		scylla.WithHost(address),
 		scylla.WithKeyspace("wikistats"),
 		scylla.WithClusterConsistency(gocql.One),

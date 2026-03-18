@@ -1,6 +1,7 @@
 package scylla
 
 import (
+	"log/slog"
 	"time"
 
 	"github.com/gocql/gocql"
@@ -11,11 +12,21 @@ type ScyllaOption func(*ScyllaOptions)
 type ScyllaOptions struct {
 	Host                     string
 	Keyspace                 string
+	DisableInitialHostLookup bool
 	RetryTime                time.Duration
 	ConnectionTimeout        time.Duration
 	ClusterConsistency       gocql.Consistency
 	HostSelectPolicy         gocql.HostSelectionPolicy
-	DisableInitialHostLookup bool
+	Logger                   *slog.Logger
+}
+
+func WithLogger(logger *slog.Logger) ScyllaOption {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return func(opts *ScyllaOptions) {
+		opts.Logger = logger.With(slog.String("src", "ScyllaDatabaseAdapter"))
+	}
 }
 
 func WithHost(host string) ScyllaOption {
@@ -69,6 +80,7 @@ func defaultOptions() *ScyllaOptions {
 		ClusterConsistency:       gocql.Quorum,
 		HostSelectPolicy:         gocql.TokenAwareHostPolicy(gocql.RoundRobinHostPolicy()),
 		DisableInitialHostLookup: false,
+		Logger:                   slog.Default().With(slog.String("src", "ScyllaDatabaseAdapter")),
 	}
 }
 

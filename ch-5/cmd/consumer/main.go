@@ -34,7 +34,8 @@ func main() {
 		Level: cli.ParseLogLevel(args.LogLevel),
 	})).With("svc", "wikistats-consumer")
 
-	syl := scylla.NewScyllaDatabaseAdapter(lgr,
+	syl := scylla.NewScyllaDatabaseAdapter(
+		scylla.WithLogger(lgr),
 		scylla.WithHost(args.DBHost),
 		scylla.WithKeyspace(args.DBKeyspace),
 		scylla.WithClusterConsistency(gocql.Quorum),
