@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/amalley/be-workshop/ch-5/api/authentication/public"
-	"github.com/amalley/be-workshop/ch-5/api/controller/wikistats"
+	"github.com/amalley/be-workshop/ch-5/api/controller/consumer"
 	"github.com/amalley/be-workshop/ch-5/api/database/scylla"
 	"github.com/amalley/be-workshop/ch-5/api/middleware"
 	"github.com/amalley/be-workshop/ch-5/api/server"
@@ -19,18 +19,21 @@ import (
 )
 
 func main() {
-	args := cli.ParseArgs()
+	args := cli.ParseArgs(&cli.Args{
+		Port:       cli.GetEnv("PORT", "7000"),
+		LogLevel:   cli.GetEnv("LOG_LEVEL", "debug"),
+		DBHost:     cli.GetEnv("DB_HOST", "scylla"),
+		DBKeyspace: cli.GetEnv("DB_KEYSPACE", "wikistats"),
+	})
+
 	mux := http.NewServeMux()
 	lgr := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: cli.ParseLogLevel(args.LogLevel),
-	})).With("app", "wikistats-consumer")
-
-	mdl := middleware.NewMiddlewareRegistry()
-	mdl.Use(middleware.PanicRecover(lgr))
+	})).With("svc", "wikistats-consumer")
 
 	syl := scylla.NewScyllaDatabaseAdapter(lgr,
-		scylla.WithHost("scylla"),
-		scylla.WithKeyspace("wikistats"),
+		scylla.WithHost(args.DBHost),
+		scylla.WithKeyspace(args.DBKeyspace),
 		scylla.WithClusterConsistency(gocql.Quorum),
 		scylla.WithConnectionTimeout(5*time.Second),
 		scylla.WithRetryTime(5*time.Second),
@@ -38,11 +41,14 @@ func main() {
 
 	pub := public.NewPublicAuthenticator(lgr)
 
-	ctl := wikistats.NewWikiStatsController(lgr, syl, pub)
+	ctl := consumer.NewConsumerController(lgr, syl, pub)
 	ctl.RegisterRoutes(mux)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	mdl := middleware.NewMiddlewareRegistry()
+	mdl.Use(middleware.PanicRecover(lgr))
 
 	server.NewServer(
 		server.WithAddress(":"+args.Port),
@@ -52,23 +58,3 @@ func main() {
 		server.WithShutdownHook(ctl.OnShutdown),
 	).Run(ctx)
 }
-
-// u, err := url.Parse(args.URL)
-// if err != nil {
-// 	lgr.Error("fatal: unable to parse stream URL", "url", args.URL, "error", err.Error())
-// 	os.Exit(1)
-// }
-
-// stm := wiki.NewWikiStreamAdapter(lgr, syl, u)
-
-// grp.Go(func() {
-// 	if err := c.stream.Connect(ctx); err != nil {
-// 		c.logger.Error("Failed to connect to stream", slog.Any("err", err))
-// 	}
-// })
-// go func() {
-// 	c.logger.Info("Starting stream consumption")
-// 	if err := c.stream.Consume(ctx); err != nil && !errors.Is(err, context.Canceled) {
-// 		c.logger.Error("Failed to consume stream", slog.Any("err", err))
-// 	}
-// }()

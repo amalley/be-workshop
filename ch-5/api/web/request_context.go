@@ -5,6 +5,21 @@ import (
 	"net/http"
 )
 
+// WebHandlerFunc defines the signature of a web handler function that accepts a custom RequestCtx.
+type WebHandlerFunc func(ctx *RequestCtx)
+
+// HandleFunc is a helper function that wraps a WebHandlerFunc into a standard http.HandlerFunc,
+// allowing it to be used with the http package.
+func HandleFunc(logger *slog.Logger, handler WebHandlerFunc) http.HandlerFunc {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := NewRequestCtx(logger, w, r)
+		handler(ctx)
+	}
+}
+
 // RequestCtx encapsulates the context of an HTTP request, providing access to the logger, request, and response writer.
 type RequestCtx struct {
 	logger   *slog.Logger

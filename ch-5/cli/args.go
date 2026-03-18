@@ -8,21 +8,27 @@ import (
 )
 
 type Args struct {
-	Port     string
-	URL      string
-	LogLevel string
+	Port       string
+	URL        string
+	LogLevel   string
+	DBHost     string
+	DBKeyspace string
 }
 
-func ParseArgs() *Args {
+func ParseArgs(defaults *Args) *Args {
 	args := &Args{
-		Port:     GetEnv("PORT", "7000"),
-		URL:      GetEnv("STREAM_URL", "https://stream.wikimedia.org/v2/stream/recentchange"),
-		LogLevel: GetEnv("LOG_LEVEL", "info"),
+		defaults.Port,
+		defaults.URL,
+		defaults.LogLevel,
+		defaults.DBHost,
+		defaults.DBKeyspace,
 	}
 
 	flag.StringVar(&args.Port, "port", args.Port, "Port to listen on")
 	flag.StringVar(&args.URL, "url", args.URL, "WikiMedia stream url")
 	flag.StringVar(&args.LogLevel, "log-level", args.LogLevel, "Application's log level (debug, info, warning, error)")
+	flag.StringVar(&args.DBHost, "db-host", args.DBHost, "Database host")
+	flag.StringVar(&args.DBKeyspace, "db-keyspace", args.DBKeyspace, "Database keyspace")
 	flag.Parse()
 
 	return args

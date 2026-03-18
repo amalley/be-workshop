@@ -15,16 +15,16 @@ services:
     volumes:
       - scylla_data:/var/lib/scylla
 
-  wikistats-consumer:
-    container_name: wikistats-consumer
+  wikistats-producer:
+    container_name: wikistats-producer
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["./wikistats-consumer"]
+    command: ["./wikistats-producer"]
     env_file:
       - .env
     ports:
-      - "${HOST_PORT}:${PORT}"
+      - "${PRODUCER_PORT}:${PORT}"
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:${PORT}/liveness || exit 1"]
       interval: 5s 
@@ -37,14 +37,22 @@ services:
       scylla:
         condition: service_healthy
 
-  wikistats-producer:
-    container_name: wikistats-producer
+  wikistats-consumer:
+    container_name: wikistats-consumer
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["./wikistats-producer"]
+    command: ["./wikistats-consumer"]
     env_file:
       - .env
+    ports:
+      - "${CONSUMER_PORT}:${PORT}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:${PORT}/liveness || exit 1"]
+      interval: 5s 
+      timeout: 3s
+      retries: 5
+      start_period: 15s 
     networks:
       - wikistats-networks
     depends_on:

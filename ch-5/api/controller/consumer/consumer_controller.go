@@ -1,4 +1,4 @@
-package wikistats
+package consumer
 
 import (
 	"context"
@@ -21,49 +21,49 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var _ controller.Controller = &WikiStatsController{}
+var _ controller.Controller = &ConsumerController{}
 
 const iss = "wikistats-app"
 
-type WikiStatsController struct {
+type ConsumerController struct {
 	logger *slog.Logger
 
 	dbAdapter     database.Adapter
 	authenticator authentication.Authenticator
 }
 
-func NewWikiStatsController(
+func NewConsumerController(
 	logger *slog.Logger,
 	dbAdapter database.Adapter,
-	authenticator authentication.Authenticator) *WikiStatsController {
-	return &WikiStatsController{
-		logger:        logger.With(slog.String("src", "WikiStatsController")),
+	authenticator authentication.Authenticator) *ConsumerController {
+	return &ConsumerController{
+		logger:        logger.With(slog.String("src", "ConsumerController")),
 		dbAdapter:     dbAdapter,
 		authenticator: authenticator,
 	}
 }
 
-func (c *WikiStatsController) RegisterRoutes(mux *http.ServeMux) {
+func (c *ConsumerController) RegisterRoutes(mux *http.ServeMux) {
 	// Unauthenticated routes
-	mux.Handle("GET /health/liveness", c.handler(c.Liveness))
+	mux.Handle("GET /liveness", web.HandleFunc(c.logger, c.Liveness))
 
 	mdl := middleware.NewMiddlewareRegistry()
 
 	// Database dependent routes
 	mdl.Use(c.DatabaseReadinessMiddleware(c.dbAdapter))
-	mux.Handle("POST /login", mdl.Resolve(c.handler(c.Login)))
+	mux.Handle("POST /login", mdl.Resolve(web.HandleFunc(c.logger, c.Login)))
 
 	// Note: OnStartup adds an admin/password test user.
 	// To create the first "real" user, login as admin. Typically, this would be done through a separate admin API, but this is fine for now.
 
 	// Authenticated routes
 	mdl.Use(c.authenticator.AuthenticationMiddleware(c.VerifyPublicUser))
-	mux.Handle("GET /stats", mdl.Resolve(c.handler(c.GetStats)))
-	mux.Handle("POST /users", mdl.Resolve(c.handler(c.CreateUser)))
-	mux.Handle("DELETE /users", mdl.Resolve(c.handler(c.DeleteUser)))
+	mux.Handle("GET /stats", mdl.Resolve(web.HandleFunc(c.logger, c.GetStats)))
+	mux.Handle("POST /users", mdl.Resolve(web.HandleFunc(c.logger, c.CreateUser)))
+	mux.Handle("DELETE /users", mdl.Resolve(web.HandleFunc(c.logger, c.DeleteUser)))
 }
 
-func (c *WikiStatsController) VerifyPublicUser(sub string) bool {
+func (c *ConsumerController) VerifyPublicUser(sub string) bool {
 	userID, err := gocql.ParseUUID(sub)
 	if err != nil {
 		c.logger.Error("Failed to parse user ID from token subject", slog.Any("err", err), slog.String("sub", sub))
@@ -84,18 +84,11 @@ func (c *WikiStatsController) VerifyPublicUser(sub string) bool {
 	return true
 }
 
-// handler wraps a web.RequestCtx around the standard http.HandlerFunc, allowing us to use our custom context with logging and other utilities in our handlers.
-func (c *WikiStatsController) handler(handler func(*web.RequestCtx)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		handler(web.NewRequestCtx(c.logger, w, r))
-	}
-}
-
 // --------------------------------------------------------------------------------------------
 // Middleware
 // --------------------------------------------------------------------------------------------
 
-func (c *WikiStatsController) DatabaseReadinessMiddleware(database database.Adapter) middleware.Middleware {
+func (c *ConsumerController) DatabaseReadinessMiddleware(database database.Adapter) middleware.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !database.IsReady() {
@@ -112,11 +105,13 @@ func (c *WikiStatsController) DatabaseReadinessMiddleware(database database.Adap
 // Lifecycle
 // --------------------------------------------------------------------------------------------
 
-func (c *WikiStatsController) OnStartup(ctx context.Context) error {
+func (c *ConsumerController) OnStartup(ctx context.Context) error {
 	if utils.CtxDone(ctx) {
 		c.logger.Info("failed to start stream", slog.String("reason", ctx.Err().Error()))
 		return ctx.Err()
 	}
+
+	c.logger.Info("ConsumerController starting up...")
 
 	var grp sync.WaitGroup
 	grp.Go(func() {
@@ -154,7 +149,7 @@ func (c *WikiStatsController) OnStartup(ctx context.Context) error {
 	return nil
 }
 
-func (c *WikiStatsController) OnShutdown(ctx context.Context) error {
+func (c *ConsumerController) OnShutdown(ctx context.Context) error {
 	if utils.CtxDone(ctx) {
 		c.logger.Info("failed to shutdown", slog.String("reason", ctx.Err().Error()))
 		return ctx.Err()
@@ -173,8 +168,7 @@ func (c *WikiStatsController) OnShutdown(ctx context.Context) error {
 // Health
 // --------------------------------------------------------------------------------------------
 
-func (c *WikiStatsController) Liveness(ctx *web.RequestCtx) {
-	ctx.Logger().Info("We're alive!")
+func (c *ConsumerController) Liveness(ctx *web.RequestCtx) {
 	ctx.Send(http.StatusOK, []byte("OK"))
 }
 
@@ -182,7 +176,7 @@ func (c *WikiStatsController) Liveness(ctx *web.RequestCtx) {
 // Stats
 // --------------------------------------------------------------------------------------------
 
-func (c *WikiStatsController) GetStats(ctx *web.RequestCtx) {
+func (c *ConsumerController) GetStats(ctx *web.RequestCtx) {
 	stats, err := c.dbAdapter.GetStats(ctx.Request().Context())
 	if err != nil {
 		ctx.Logger().Error("Failed to get stats", slog.Any("err", err))
@@ -204,7 +198,7 @@ func (c *WikiStatsController) GetStats(ctx *web.RequestCtx) {
 // User
 // --------------------------------------------------------------------------------------------
 
-func (c *WikiStatsController) CreateUser(ctx *web.RequestCtx) {
+func (c *ConsumerController) CreateUser(ctx *web.RequestCtx) {
 	if ctx.Request().ContentLength == 0 {
 		ctx.SendError(http.StatusBadRequest, fmt.Errorf("no request body provided"))
 		return
@@ -240,7 +234,7 @@ func (c *WikiStatsController) CreateUser(ctx *web.RequestCtx) {
 	ctx.Send(http.StatusOK, []byte("OK"))
 }
 
-func (c *WikiStatsController) DeleteUser(ctx *web.RequestCtx) {
+func (c *ConsumerController) DeleteUser(ctx *web.RequestCtx) {
 	username := ctx.Request().URL.Query().Get("user")
 	if username == "" {
 		ctx.SendError(http.StatusBadRequest, fmt.Errorf("no user query parameter provided"))
@@ -274,7 +268,7 @@ func (c *WikiStatsController) DeleteUser(ctx *web.RequestCtx) {
 // Login
 // --------------------------------------------------------------------------------------------
 
-func (c *WikiStatsController) Login(ctx *web.RequestCtx) {
+func (c *ConsumerController) Login(ctx *web.RequestCtx) {
 	if ctx.Request().ContentLength == 0 {
 		ctx.SendError(http.StatusBadRequest, fmt.Errorf("no request body provided"))
 		return
