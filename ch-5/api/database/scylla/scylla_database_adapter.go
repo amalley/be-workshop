@@ -43,8 +43,7 @@ const (
 	ServersStat  = "servers"
 )
 
-var _ database.Reader = &ScyllaDatabaseAdapter{}
-var _ database.Writer = &ScyllaDatabaseAdapter{}
+var _ database.Adapter = &ScyllaDatabaseAdapter{}
 
 type ScyllaDatabaseAdapter struct {
 	logger  *slog.Logger

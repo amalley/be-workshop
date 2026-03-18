@@ -15,6 +15,7 @@ import (
 	"github.com/amalley/be-workshop/ch-5/api/stream"
 	"github.com/amalley/be-workshop/ch-5/api/utils"
 	"github.com/amalley/be-workshop/ch-5/models"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 var dataTag = []byte("data: ")
@@ -27,6 +28,9 @@ type wikiStreamRequestDoer interface {
 }
 
 type WikiStreamAdapter struct {
+	kClient *kgo.Client
+	topic   string
+
 	stream io.ReadCloser
 	client wikiStreamRequestDoer
 
