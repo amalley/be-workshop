@@ -8,9 +8,9 @@ import (
 // WebHandlerFunc defines the signature of a web handler function that accepts a custom RequestCtx.
 type WebHandlerFunc func(ctx *RequestCtx)
 
-// HandleFunc is a helper function that wraps a WebHandlerFunc into a standard http.HandlerFunc,
-// allowing it to be used with the http package.
-func HandleFunc(logger *slog.Logger, handler WebHandlerFunc) http.HandlerFunc {
+// WithRequestCtx is a middleware that wraps a WebHandlerFunc, creating a RequestCtx for each incoming
+// HTTP request and passing it to the handler.
+func WithRequestCtx(logger *slog.Logger, handler WebHandlerFunc) http.HandlerFunc {
 	if logger == nil {
 		logger = slog.Default()
 	}

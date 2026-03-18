@@ -2,18 +2,22 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
-	"github.com/amalley/be-workshop/ch-5/api/controller/producer"
+	"github.com/amalley/be-workshop/ch-5/api/database"
 	"github.com/amalley/be-workshop/ch-5/api/database/scylla"
+	"github.com/amalley/be-workshop/ch-5/api/handlers/producer"
 	"github.com/amalley/be-workshop/ch-5/api/middleware"
 	"github.com/amalley/be-workshop/ch-5/api/server"
+	"github.com/amalley/be-workshop/ch-5/api/stream"
 	"github.com/amalley/be-workshop/ch-5/api/stream/wiki"
 	"github.com/amalley/be-workshop/ch-5/cli"
 	"github.com/gocql/gocql"
@@ -48,8 +52,8 @@ func main() {
 	}
 	stm := wiki.NewWikiStreamAdapter(lgr, syl, u)
 
-	ctl := producer.NewProducerController(lgr, syl, stm)
-	ctl.RegisterRoutes(mux)
+	hld := producer.NewProducerHandlers(lgr)
+	hld.RegisterHandlers(mux)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -61,7 +65,59 @@ func main() {
 		server.WithAddress(":"+args.Port),
 		server.WithHandler(mdl.Resolve(mux)),
 		server.WithLogger(lgr),
-		server.WithStartupHook(ctl.OnStartup),
-		server.WithShutdownHook(ctl.OnShutdown),
+		server.WithStartupHook(startup(lgr, syl, stm)),
+		server.WithShutdownHook(shutdown(lgr, syl, stm)),
 	).Run(ctx)
+}
+
+func startup(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stream.StreamAdapter) func(context.Context) error {
+	return func(ctx context.Context) error {
+		var grp sync.WaitGroup
+		grp.Go(func() {
+			if err := dbAdapter.Connect(ctx); err != nil {
+				logger.Error("failed to connect to database", "error", err.Error())
+				return
+			}
+		})
+		grp.Go(func() {
+			if err := streamAdapter.Connect(ctx); err != nil {
+				logger.Error("failed to connect to stream", "error", err.Error())
+				return
+			}
+		})
+		grp.Wait()
+
+		wait := time.NewTicker(time.Second * 2)
+		defer wait.Stop()
+
+		for !dbAdapter.IsReady() {
+			logger.Info("Waiting for database to be ready...")
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-wait.C:
+			}
+		}
+
+		go func() {
+			if err := streamAdapter.Consume(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				logger.Error("stream consumption ended with error", "error", err.Error())
+			}
+		}()
+
+		return nil
+	}
+}
+
+func shutdown(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stream.StreamAdapter) func(context.Context) error {
+	return func(ctx context.Context) error {
+		if err := streamAdapter.Close(ctx); err != nil {
+			logger.Error("failed to close stream adapter", "error", err.Error())
+		}
+
+		if err := dbAdapter.Close(ctx); err != nil {
+			logger.Error("failed to close database adapter", "error", err.Error())
+		}
+		return nil
+	}
 }

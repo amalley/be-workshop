@@ -7,77 +7,75 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sync"
-	"time"
 
 	"github.com/amalley/be-workshop/ch-5/api/authentication"
-	"github.com/amalley/be-workshop/ch-5/api/controller"
 	"github.com/amalley/be-workshop/ch-5/api/database"
+	"github.com/amalley/be-workshop/ch-5/api/handlers"
 	"github.com/amalley/be-workshop/ch-5/api/middleware"
-	"github.com/amalley/be-workshop/ch-5/api/utils"
 	"github.com/amalley/be-workshop/ch-5/api/web"
 	"github.com/amalley/be-workshop/ch-5/models"
 	"github.com/gocql/gocql"
 	"golang.org/x/crypto/bcrypt"
 )
 
-var _ controller.Controller = &ConsumerController{}
-
 const iss = "wikistats-app"
 
-type ConsumerController struct {
+// Ensure ConsumerHandlers implements all required handler interfaces.
+var _ handlers.HealthHandlers = &ConsumerHandlers{}
+var _ handlers.LoginHandlers = &ConsumerHandlers{}
+var _ handlers.StatsHandlers = &ConsumerHandlers{}
+var _ handlers.UserHandlers = &ConsumerHandlers{}
+
+type ConsumerHandlers struct {
 	logger *slog.Logger
 
 	dbAdapter     database.Adapter
 	authenticator authentication.Authenticator
 }
 
-func NewConsumerController(
-	logger *slog.Logger,
-	dbAdapter database.Adapter,
-	authenticator authentication.Authenticator) *ConsumerController {
-	return &ConsumerController{
-		logger:        logger.With(slog.String("src", "ConsumerController")),
+func NewConsumerHandlers(logger *slog.Logger, dbAdapter database.Adapter, authenticator authentication.Authenticator) *ConsumerHandlers {
+	return &ConsumerHandlers{
+		logger:        logger.With(slog.String("src", "ConsumerHandlers")),
 		dbAdapter:     dbAdapter,
 		authenticator: authenticator,
 	}
 }
 
-func (c *ConsumerController) RegisterRoutes(mux *http.ServeMux) {
+func (h *ConsumerHandlers) RegisterHandlers(mux *http.ServeMux) {
 	// Unauthenticated routes
-	mux.Handle("GET /liveness", web.HandleFunc(c.logger, c.Liveness))
+	mux.Handle("GET /liveness", web.WithRequestCtx(h.logger, h.Liveness))
 
 	mdl := middleware.NewMiddlewareRegistry()
 
 	// Database dependent routes
-	mdl.Use(c.DatabaseReadinessMiddleware(c.dbAdapter))
-	mux.Handle("POST /login", mdl.Resolve(web.HandleFunc(c.logger, c.Login)))
+	mdl.Use(h.DatabaseReadinessMiddleware(h.dbAdapter))
+	mux.Handle("POST /login", mdl.Resolve(web.WithRequestCtx(h.logger, h.Login)))
 
 	// Note: OnStartup adds an admin/password test user.
 	// To create the first "real" user, login as admin. Typically, this would be done through a separate admin API, but this is fine for now.
 
 	// Authenticated routes
-	mdl.Use(c.authenticator.AuthenticationMiddleware(c.VerifyPublicUser))
-	mux.Handle("GET /stats", mdl.Resolve(web.HandleFunc(c.logger, c.GetStats)))
-	mux.Handle("POST /users", mdl.Resolve(web.HandleFunc(c.logger, c.CreateUser)))
-	mux.Handle("DELETE /users", mdl.Resolve(web.HandleFunc(c.logger, c.DeleteUser)))
+	mdl.Use(h.authenticator.AuthenticationMiddleware(h.verifyPublicUser))
+	mux.Handle("GET /stats", mdl.Resolve(web.WithRequestCtx(h.logger, h.GetStats)))
+	mux.Handle("POST /users", mdl.Resolve(web.WithRequestCtx(h.logger, h.CreateUser)))
+	mux.Handle("DELETE /users", mdl.Resolve(web.WithRequestCtx(h.logger, h.DeleteUser)))
 }
 
-func (c *ConsumerController) VerifyPublicUser(sub string) bool {
+func (h *ConsumerHandlers) verifyPublicUser(sub string) bool {
 	userID, err := gocql.ParseUUID(sub)
 	if err != nil {
-		c.logger.Error("Failed to parse user ID from token subject", slog.Any("err", err), slog.String("sub", sub))
+		h.logger.Error("Failed to parse user ID from token subject", slog.Any("err", err), slog.String("sub", sub))
 		return false
 	}
 
-	_, exists, err := c.dbAdapter.GetUserByID(context.Background(), userID)
+	_, exists, err := h.dbAdapter.GetUserByID(context.Background(), userID)
 	if err != nil {
-		c.logger.Error("Failed to get user by ID", slog.Any("err", err), slog.String("user_id", sub))
+		h.logger.Error("Failed to get user by ID", slog.Any("err", err), slog.String("user_id", sub))
 		return false
 	}
 
 	if !exists {
-		c.logger.Info("User not found for token subject", slog.String("user_id", sub))
+		h.logger.Info("User not found for token subject", slog.String("user_id", sub))
 		return false
 	}
 
@@ -88,11 +86,11 @@ func (c *ConsumerController) VerifyPublicUser(sub string) bool {
 // Middleware
 // --------------------------------------------------------------------------------------------
 
-func (c *ConsumerController) DatabaseReadinessMiddleware(database database.Adapter) middleware.Middleware {
+func (h *ConsumerHandlers) DatabaseReadinessMiddleware(database database.Adapter) middleware.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !database.IsReady() {
-				c.logger.Info("Waiting for database ready")
+				h.logger.Info("Waiting for database ready")
 				w.WriteHeader(http.StatusServiceUnavailable)
 				return
 			}
@@ -102,73 +100,10 @@ func (c *ConsumerController) DatabaseReadinessMiddleware(database database.Adapt
 }
 
 // --------------------------------------------------------------------------------------------
-// Lifecycle
-// --------------------------------------------------------------------------------------------
-
-func (c *ConsumerController) OnStartup(ctx context.Context) error {
-	if utils.CtxDone(ctx) {
-		c.logger.Info("failed to start stream", slog.String("reason", ctx.Err().Error()))
-		return ctx.Err()
-	}
-
-	c.logger.Info("ConsumerController starting up...")
-
-	var grp sync.WaitGroup
-	grp.Go(func() {
-		if err := c.dbAdapter.Connect(ctx); err != nil {
-			c.logger.Error("Failed to connect to database", slog.Any("err", err))
-		}
-	})
-	grp.Wait()
-
-	wait := time.NewTicker(time.Second * 2)
-	defer wait.Stop()
-
-	// Ensure the database infrastructure is ready before we start consuming the stream
-	for !c.dbAdapter.IsReady() {
-		c.logger.Info("Waiting for database to be ready...")
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-wait.C:
-		}
-	}
-
-	_, exists, err := c.dbAdapter.GetUser(ctx, "admin")
-	if err != nil {
-		c.logger.Error("Failed to get default user", slog.Any("err", err))
-	}
-
-	if !exists {
-		// Don't do this in production
-		if err := c.dbAdapter.CreateUser(ctx, "admin", "password"); err != nil {
-			c.logger.Error("Failed to create default user", slog.Any("err", err))
-		}
-	}
-
-	return nil
-}
-
-func (c *ConsumerController) OnShutdown(ctx context.Context) error {
-	if utils.CtxDone(ctx) {
-		c.logger.Info("failed to shutdown", slog.String("reason", ctx.Err().Error()))
-		return ctx.Err()
-	}
-
-	// Note: We don't return errors here to avoid interrupting shutdown, but we do log them.
-
-	if err := c.dbAdapter.Close(ctx); err != nil {
-		c.logger.Error("Failed to close database", slog.Any("err", err))
-	}
-
-	return nil
-}
-
-// --------------------------------------------------------------------------------------------
 // Health
 // --------------------------------------------------------------------------------------------
 
-func (c *ConsumerController) Liveness(ctx *web.RequestCtx) {
+func (h *ConsumerHandlers) Liveness(ctx *web.RequestCtx) {
 	ctx.Send(http.StatusOK, []byte("OK"))
 }
 
@@ -176,8 +111,8 @@ func (c *ConsumerController) Liveness(ctx *web.RequestCtx) {
 // Stats
 // --------------------------------------------------------------------------------------------
 
-func (c *ConsumerController) GetStats(ctx *web.RequestCtx) {
-	stats, err := c.dbAdapter.GetStats(ctx.Request().Context())
+func (h *ConsumerHandlers) GetStats(ctx *web.RequestCtx) {
+	stats, err := h.dbAdapter.GetStats(ctx.Request().Context())
 	if err != nil {
 		ctx.Logger().Error("Failed to get stats", slog.Any("err", err))
 		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("failed to get stats: %w", err))
@@ -198,7 +133,7 @@ func (c *ConsumerController) GetStats(ctx *web.RequestCtx) {
 // User
 // --------------------------------------------------------------------------------------------
 
-func (c *ConsumerController) CreateUser(ctx *web.RequestCtx) {
+func (h *ConsumerHandlers) CreateUser(ctx *web.RequestCtx) {
 	if ctx.Request().ContentLength == 0 {
 		ctx.SendError(http.StatusBadRequest, fmt.Errorf("no request body provided"))
 		return
@@ -211,7 +146,7 @@ func (c *ConsumerController) CreateUser(ctx *web.RequestCtx) {
 		return
 	}
 
-	_, exists, err := c.dbAdapter.GetUser(ctx.Request().Context(), newUser.Username)
+	_, exists, err := h.dbAdapter.GetUser(ctx.Request().Context(), newUser.Username)
 	if err != nil {
 		ctx.Logger().Error("Failed to create user", slog.Any("err", err), slog.String("user", newUser.Username))
 		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("internal server error: %w", err))
@@ -224,7 +159,7 @@ func (c *ConsumerController) CreateUser(ctx *web.RequestCtx) {
 		return
 	}
 
-	if err := c.dbAdapter.CreateUser(ctx.Request().Context(), newUser.Username, newUser.Password); err != nil {
+	if err := h.dbAdapter.CreateUser(ctx.Request().Context(), newUser.Username, newUser.Password); err != nil {
 		ctx.Logger().Error("Failed to create user", slog.Any("err", err), slog.String("user", newUser.Username))
 		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("failed to create user: %w", err))
 		return
@@ -234,14 +169,14 @@ func (c *ConsumerController) CreateUser(ctx *web.RequestCtx) {
 	ctx.Send(http.StatusOK, []byte("OK"))
 }
 
-func (c *ConsumerController) DeleteUser(ctx *web.RequestCtx) {
+func (h *ConsumerHandlers) DeleteUser(ctx *web.RequestCtx) {
 	username := ctx.Request().URL.Query().Get("user")
 	if username == "" {
 		ctx.SendError(http.StatusBadRequest, fmt.Errorf("no user query parameter provided"))
 		return
 	}
 
-	userDB, exists, err := c.dbAdapter.GetUser(ctx.Request().Context(), username)
+	userDB, exists, err := h.dbAdapter.GetUser(ctx.Request().Context(), username)
 	if err != nil {
 		ctx.Logger().Error("Failed to get user", slog.Any("err", err), slog.String("user", username))
 		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("failed to get user: %w", err))
@@ -254,7 +189,7 @@ func (c *ConsumerController) DeleteUser(ctx *web.RequestCtx) {
 		return
 	}
 
-	if err := c.dbAdapter.DeleteUser(ctx.Request().Context(), userDB.ID); err != nil {
+	if err := h.dbAdapter.DeleteUser(ctx.Request().Context(), userDB.ID); err != nil {
 		ctx.Logger().Error("Failed to delete user", slog.Any("err", err), slog.String("user", username), slog.String("user_id", userDB.ID.String()))
 		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("failed to delete user: %w", err))
 		return
@@ -268,7 +203,7 @@ func (c *ConsumerController) DeleteUser(ctx *web.RequestCtx) {
 // Login
 // --------------------------------------------------------------------------------------------
 
-func (c *ConsumerController) Login(ctx *web.RequestCtx) {
+func (h *ConsumerHandlers) Login(ctx *web.RequestCtx) {
 	if ctx.Request().ContentLength == 0 {
 		ctx.SendError(http.StatusBadRequest, fmt.Errorf("no request body provided"))
 		return
@@ -281,7 +216,7 @@ func (c *ConsumerController) Login(ctx *web.RequestCtx) {
 		return
 	}
 
-	userDB, exists, err := c.dbAdapter.GetUser(ctx.Request().Context(), login.Username)
+	userDB, exists, err := h.dbAdapter.GetUser(ctx.Request().Context(), login.Username)
 	if err != nil {
 		ctx.Logger().Error("Failed to login", slog.Any("err", err), slog.String("user", login.Username))
 		ctx.SendError(http.StatusInternalServerError, fmt.Errorf("internal server error: %w", err))
@@ -305,7 +240,7 @@ func (c *ConsumerController) Login(ctx *web.RequestCtx) {
 		return
 	}
 
-	token, err := c.authenticator.GenerateToken(iss, userDB.ID.String())
+	token, err := h.authenticator.GenerateToken(iss, userDB.ID.String())
 	if err != nil {
 		ctx.Logger().Error("Failed to login", slog.Any("err", err), slog.String("user", login.Username))
 		ctx.SendError(http.StatusUnauthorized, fmt.Errorf("failed to login: %w", err))
