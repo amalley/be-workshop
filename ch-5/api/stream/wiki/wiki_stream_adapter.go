@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -20,7 +21,6 @@ var (
 
 	ErrNotConnected     = errors.New("not connected to stream")
 	ErrAlreadyConnected = errors.New("already connected to stream")
-	ErrAlreadyConsuming = errors.New("already consuming stream")
 )
 
 var _ stream.StreamAdapter = &WikiStreamAdapter{}
@@ -64,10 +64,9 @@ func (a *WikiStreamAdapter) Connect(ctx context.Context) error {
 	return nil
 }
 
-// Consume processes the Wiki media stream, consuming messages containing the "data: " tag.
-// Consumed messages are added to the provided WikiStats database given to the adapter on initialization.
-//
-// Returns an error if attempting to consume before connecting to a stream.
+// Consume starts consuming the stream and producing messages to Kafka.
+// If the connection to the stream is lost, it will attempt to reconnect with an exponential backoff strategy.
+// The context can be used to signal the adapter to stop consuming and close the connection to the stream.
 func (a *WikiStreamAdapter) Consume(ctx context.Context) error {
 	if a.client == nil {
 		return ErrNotConnected
@@ -81,7 +80,19 @@ func (a *WikiStreamAdapter) Consume(ctx context.Context) error {
 			return ctx.Err()
 		}
 
-		err := a.readStream(ctx)
+		// Attempt to connect to and read the stream. If the connection is lost, attempt to reconnect.
+		stream, err := a.connectStream(ctx)
+		if err != nil {
+			return err
+		}
+
+		err = a.readStream(ctx, stream)
+		stream.Close()
+
+		if err == nil || errors.Is(err, io.EOF) {
+			backoff = time.Second
+			continue
+		}
 
 		if errors.Is(err, context.Canceled) {
 			return nil
@@ -92,6 +103,7 @@ func (a *WikiStreamAdapter) Consume(ctx context.Context) error {
 			slog.Float64("retry_in", backoff.Seconds()),
 		)
 
+		// Connect is lost, wait a bit and try again.
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -101,30 +113,24 @@ func (a *WikiStreamAdapter) Consume(ctx context.Context) error {
 	}
 }
 
-func (a *WikiStreamAdapter) readStream(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.cfg.URL.String(), nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %s", err.Error())
+// Close ensure the stream if closed. Does nothing if the adapter is not connected to a stream.
+func (a *WikiStreamAdapter) Close(ctx context.Context) error {
+	if a.client == nil {
+		return nil
 	}
 
-	req.Header.Set("User-Agent", "REDspace workshop (aaron.malley@redspace.com)")
-	if a.LastEventID != "" {
-		req.Header.Set("Last-Event-ID", a.LastEventID)
-	}
+	a.client.Close()
+	a.client = nil
 
-	resp, err := a.cfg.Doer.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to perform request: %s", err.Error())
-	}
-	defer resp.Body.Close()
+	return nil
+}
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
+func (a *WikiStreamAdapter) readStream(ctx context.Context, stream io.ReadCloser) error {
 	const maxLineSize = 10 * 1024 * 1024 // 10MB
+	reader := bufio.NewReaderSize(stream, maxLineSize)
 
-	reader := bufio.NewReaderSize(resp.Body, maxLineSize)
+	// Read the stream line by line. Lines starting with "id:" are treated as event IDs and stored for reconnection.
+	// Lines starting with "data:" are treated as messages and produced to Kafka.
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -166,14 +172,26 @@ func (a *WikiStreamAdapter) readStream(ctx context.Context) error {
 	}
 }
 
-// Close ensure the stream if closed. Does nothing if the adapter is not connected to a stream.
-func (a *WikiStreamAdapter) Close(ctx context.Context) error {
-	if a.client == nil {
-		return nil
+func (a *WikiStreamAdapter) connectStream(ctx context.Context) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.cfg.URL.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %s", err.Error())
 	}
 
-	a.client.Close()
-	a.client = nil
+	req.Header.Set("User-Agent", "REDspace workshop (aaron.malley@redspace.com)")
+	if a.LastEventID != "" {
+		req.Header.Set("Last-Event-ID", a.LastEventID)
+	}
 
-	return nil
+	resp, err := a.cfg.Doer.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to perform request: %s", err.Error())
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	return resp.Body, nil
 }

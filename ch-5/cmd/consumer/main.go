@@ -66,7 +66,7 @@ func main() {
 func startup(logger *slog.Logger, dbAdapter database.Adapter) server.ServerHook {
 	return func(ctx context.Context) error {
 		if utils.CtxDone(ctx) {
-			logger.Info("failed to start stream", slog.String("reason", ctx.Err().Error()))
+			logger.Info("failed to start", slog.String("reason", ctx.Err().Error()))
 			return ctx.Err()
 		}
 

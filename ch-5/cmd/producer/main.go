@@ -20,6 +20,7 @@ import (
 	"github.com/amalley/be-workshop/ch-5/api/server"
 	"github.com/amalley/be-workshop/ch-5/api/stream"
 	"github.com/amalley/be-workshop/ch-5/api/stream/wiki"
+	"github.com/amalley/be-workshop/ch-5/api/utils"
 	"github.com/amalley/be-workshop/ch-5/cli"
 	"github.com/gocql/gocql"
 )
@@ -83,6 +84,11 @@ func main() {
 
 func startup(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stream.StreamAdapter) func(context.Context) error {
 	return func(ctx context.Context) error {
+		if utils.CtxDone(ctx) {
+			logger.Info("failed to start", slog.Any("reason", ctx.Err().Error()))
+			return ctx.Err()
+		}
+
 		var grp sync.WaitGroup
 		grp.Go(func() {
 			if err := dbAdapter.Connect(ctx); err != nil {
