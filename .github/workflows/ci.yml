@@ -1,0 +1,53 @@
+name: WikiStats CI
+on: 
+  pull_request:
+    branches: [ main ]
+
+env:
+  WORKING_DIR: ./ch-4
+
+jobs:
+
+  # Runs linters and go vet to ensure code quality and consistency.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.1'
+        
+      - name: Run linters and go vet
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          go vet ./...
+
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          golangci-lint run ./...
+
+  # Runs unit and integration tests to validate the functionality of the application.
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.1'
+        
+      - name: Run tests
+        working-directory: ${{ env.WORKING_DIR }}
+        run: go test -v ./api/...
+
+  # Builds the application using Docker to ensure it compiles successfully.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        working-directory: ${{ env.WORKING_DIR }}
+        run: docker build -t wikistats:latest .

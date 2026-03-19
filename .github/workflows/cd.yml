@@ -1,0 +1,32 @@
+name: WikiStats CD
+on:
+  push:
+    branches: [ main ]
+
+env:
+  WORKING_DIR: ./ch-4
+
+jobs:
+
+  # Builds and pushes the Docker image to GitHub Container Registry for deployment.
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log into Github Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ env.WORKING_DIR }}
+          file: ${{ env.WORKING_DIR }}/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/wikistats:latest
+            ghcr.io/${{ github.repository }}/wikistats:${{ github.sha }}
