@@ -133,6 +133,10 @@ func (a *WikiStreamAdapterProducer) Consume(ctx context.Context) error {
 	}
 }
 
+func (a *WikiStreamAdapterProducer) Client() *kgo.Client {
+	return a.client
+}
+
 func (a *WikiStreamAdapterProducer) readStream(ctx context.Context, stream io.ReadCloser) error {
 	const maxLineSize = 10 * 1024 * 1024 // 10MB
 	reader := bufio.NewReaderSize(stream, maxLineSize)

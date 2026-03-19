@@ -1,4 +1,4 @@
-package producer
+package producer_test
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/amalley/be-workshop/ch-5/api/stream/wiki"
+	"github.com/amalley/be-workshop/ch-5/api/stream/wiki/producer"
 	"github.com/testcontainers/testcontainers-go/modules/redpanda"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -72,7 +73,7 @@ func TestWikiProducerIntegration(t *testing.T) {
 	}
 
 	u, _ := url.Parse("https://example.com")
-	adapter := NewWikiStreamAdapterWithClient(
+	adapter := producer.NewWikiStreamAdapterWithClient(
 		wiki.WithURL(u),
 		wiki.WithDoer(&MockStream{response: rawSSE}),
 		wiki.WithTopic("test-topic"),
@@ -85,7 +86,7 @@ func TestWikiProducerIntegration(t *testing.T) {
 		t.Fatalf("failed to connect stream adapter: %v", err)
 	}
 
-	adminClinet := kadm.NewClient(adapter.client)
+	adminClinet := kadm.NewClient(adapter.Client())
 
 	resp, err := adminClinet.CreateTopics(ctx, 1, 1, nil, "test-topic")
 	if err != nil {
