@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -23,7 +24,7 @@ import (
 
 func main() {
 	args := cli.ParseArgs(&cli.Args{
-		Port:         cli.GetEnv("PORT", "7000"),
+		Port:         utils.MustParseInt(cli.GetEnv("PORT", "7000")),
 		LogLevel:     cli.GetEnv("LOG_LEVEL", "info"),
 		URL:          cli.GetEnv("STREAM_URL", "https://stream.wikimedia.org/v2/stream/recentchange"),
 		KafkaBrokers: cli.GetEnv("KAFKA_BROKERS", "localhost:9092"),
@@ -59,7 +60,7 @@ func main() {
 	mdl.Use(middleware.PanicRecover(lgr))
 
 	server.NewServer(
-		server.WithAddress(":"+args.Port),
+		server.WithAddress(":"+strconv.Itoa(args.Port)),
 		server.WithHandler(mdl.Resolve(mux)),
 		server.WithLogger(lgr),
 		server.WithStartupHook(startup(lgr, adp)),
@@ -74,8 +75,10 @@ func startup(logger *slog.Logger, streamAdapter stream.StreamAdapter) func(conte
 			return ctx.Err()
 		}
 
+		// Blocks until the stream adapter is connected.
+		// If the context is canceled, the function will return early with the cancelation error.
 		if err := streamAdapter.Connect(ctx); err != nil {
-			logger.Error("failed to connect to stream", "error", err.Error())
+			logger.Error("failed to connect to stream adapter", slog.Any("err", err))
 			return err
 		}
 

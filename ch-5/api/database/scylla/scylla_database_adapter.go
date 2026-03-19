@@ -29,11 +29,12 @@ const (
 		PRIMARY KEY (username, user_id);`
 
 	StatsTable = `CREATE TABLE IF NOT EXISTS wikistats.stats (
-		stat_type text,
-		time_bucket timestamp,
-		stat_value counter,
-		PRIMARY KEY (stat_type, time_bucket)
-	) WITH CLUSTERING ORDER BY (time_bucket DESC);`
+		time_bucket timestamp PRIMARY KEY,
+		messages counter,
+		users counter,
+		bots counter,
+		servers counter
+	);`
 )
 
 const (
@@ -147,50 +148,32 @@ func (s *ScyllaDatabaseAdapter) tryCreateKeyspace(ctx context.Context) error {
 // Stats
 // --------------------------------------------------------------------------------------------
 
-func (s *ScyllaDatabaseAdapter) InsertStats(ctx context.Context, stats models.WikiStatsModel) error {
-	const query = `UPDATE wikistats.stats SET stat_value = stat_value + 1 WHERE stat_type = ? AND time_bucket = ?`
-
+func (s *ScyllaDatabaseAdapter) InsertStats(ctx context.Context, stats *models.WikiStatsCounts) error {
+	const query = `UPDATE wikistats.stats 
+				   SET messages = messages + ?, users = users + ?, bots = bots + ?, servers = servers + ? 
+    			   WHERE time_bucket = ?`
 	now := time.Now().UTC().Truncate(time.Minute)
-
-	if err := s.session.Query(query, MessagesStat, now).WithContext(ctx).Exec(); err != nil {
-		return err
-	}
-
-	label := UsersStat
-	if stats.IsBot {
-		label = BotsStat
-	}
-
-	if err := s.session.Query(query, label, now).WithContext(ctx).Exec(); err != nil {
-		return err
-	}
-
-	return s.session.Query(query, ServersStat, now).WithContext(ctx).Exec()
+	return s.session.Query(query, stats.Messages, stats.Users, stats.Bots, stats.Servers, now).WithContext(ctx).Exec()
 }
 
 func (s *ScyllaDatabaseAdapter) GetStats(ctx context.Context) (models.WikiStatsCounts, error) {
-	const query = `SELECT stat_type, SUM(stat_value) FROM wikistats.stats GROUP BY stat_type`
+	const query = `SELECT SUM(messages), SUM(users), SUM(bots), SUM(servers) 
+                   FROM wikistats.stats`
 
 	var stats models.WikiStatsCounts
-	var statType string
-	var total int64
+	var msg, usr, bot, srv int64
 
-	iter := s.session.Query(query).WithContext(ctx).Iter()
-	for iter.Scan(&statType, &total) {
-		val := int(total)
-		switch statType {
-		case MessagesStat:
-			stats.Messages = val
-		case UsersStat:
-			stats.Users = val
-		case BotsStat:
-			stats.Bots = val
-		case ServersStat:
-			stats.Servers = val
-		}
+	err := s.session.Query(query).WithContext(ctx).Scan(&msg, &usr, &bot, &srv)
+	if err != nil {
+		return stats, err
 	}
 
-	return stats, iter.Close()
+	stats.Messages = int(msg)
+	stats.Users = int(usr)
+	stats.Bots = int(bot)
+	stats.Servers = int(srv)
+
+	return stats, nil
 }
 
 // --------------------------------------------------------------------------------------------

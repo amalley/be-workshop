@@ -29,6 +29,8 @@ func NewPublicAuthenticator(logger *slog.Logger) *PublicAuthenticator {
 
 func (p *PublicAuthenticator) AuthenticationMiddleware(subVerifier authentication.SubjectVerifier) middleware.Middleware {
 	if subVerifier == nil {
+		// Default subject verifier that rejects all subjects.
+		// We'll assume no one is authorized if a verifier wasn't provided.
 		subVerifier = func(sub string) bool { return false }
 	}
 	return func(next http.Handler) http.Handler {

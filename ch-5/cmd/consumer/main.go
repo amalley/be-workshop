@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -28,12 +29,15 @@ import (
 
 func main() {
 	args := cli.ParseArgs(&cli.Args{
-		Port:         cli.GetEnv("PORT", "7000"),
-		LogLevel:     cli.GetEnv("LOG_LEVEL", "debug"),
-		DBHost:       cli.GetEnv("DB_HOST", "scylla"),
-		DBKeyspace:   cli.GetEnv("DB_KEYSPACE", "wikistats"),
-		KafkaBrokers: cli.GetEnv("KAFKA_BROKERS", "localhost:9092"),
-		KafkaTopic:   cli.GetEnv("KAFKA_TOPIC", "wikistats"),
+		Port:                 utils.MustParseInt(cli.GetEnv("PORT", "7000")),
+		LogLevel:             cli.GetEnv("LOG_LEVEL", "debug"),
+		DBHost:               cli.GetEnv("DB_HOST", "scylla"),
+		DBKeyspace:           cli.GetEnv("DB_KEYSPACE", "wikistats"),
+		KafkaBrokers:         cli.GetEnv("KAFKA_BROKERS", "localhost:9092"),
+		KafkaTopic:           cli.GetEnv("KAFKA_TOPIC", "wikistats"),
+		KafkaRetryAttempts:   utils.MustParseInt(cli.GetEnv("KAFKA_RETRY_ATTEMPTS", "5")),
+		KafkaMaxPollRecords:  utils.MustParseInt(cli.GetEnv("KAFKA_MAX_POLL_RECORDS", "1000")),
+		KafkaConsumerGroupID: cli.GetEnv("KAFKA_CONSUMER_GROUP_ID", "wikistats-consumers"),
 	})
 
 	mux := http.NewServeMux()
@@ -54,8 +58,11 @@ func main() {
 		wiki.WithLogger(lgr),
 		wiki.WithBrokers(strings.Split(args.KafkaBrokers, ",")),
 		wiki.WithTopic(args.KafkaTopic),
+		wiki.WithConsumerGroupID(args.KafkaConsumerGroupID),
 		wiki.WithRetryAttempts(args.KafkaRetryAttempts),
 		wiki.WithFetchMaxWait(500*time.Millisecond),
+		wiki.WithMaxPollRecords(args.KafkaMaxPollRecords),
+		wiki.WithDBWriter(syl),
 	)
 
 	pub := public.NewPublicAuthenticator(lgr)
@@ -70,7 +77,7 @@ func main() {
 	mdl.Use(middleware.PanicRecover(lgr))
 
 	server.NewServer(
-		server.WithAddress(":"+args.Port),
+		server.WithAddress(":"+strconv.Itoa(args.Port)),
 		server.WithHandler(mdl.Resolve(mux)),
 		server.WithLogger(lgr),
 		server.WithStartupHook(startup(lgr, syl, adp)),
@@ -85,25 +92,21 @@ func startup(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stre
 			return ctx.Err()
 		}
 
-		var grp sync.WaitGroup
-		grp.Go(func() {
-			if err := streamAdapter.Connect(ctx); err != nil {
-				logger.Error("failed to connect to stream adapter", slog.Any("err", err))
-			}
-		})
-		grp.Go(func() {
-			if err := dbAdapter.Connect(ctx); err != nil {
-				logger.Error("failed to connect to database", slog.Any("err", err))
-			}
-		})
-		grp.Wait()
+		// Blocks until services are connected.
+		// If the context is canceled, the function will return early with the cancelation error.
+		if err := connectServices(ctx, logger, dbAdapter, streamAdapter); err != nil {
+			logger.Error("startup failed", slog.Any("err", err))
+			return err
+		}
 
+		// Blocks until the database is ready.
+		// If the context is canceled, the function will return early with the cancelation error.
 		if err := waitForDatabase(ctx, logger, dbAdapter); err != nil {
 			logger.Error("failed while waiting for database to be ready", slog.Any("err", err))
 			return err
 		}
 
-		// Start consuming in a separate goroutine to avoid blocking the startup process.
+		// Start consuming in a separate goroutine to avoid blocking the remaining startup process.
 		// The stream adapter will handle reconnection logic internally, so we don't need to worry about that here.
 		go func() {
 			if err := streamAdapter.Consume(ctx); err != nil && !errors.Is(err, context.Canceled) {
@@ -132,6 +135,38 @@ func shutdown(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter str
 
 		return nil
 	}
+}
+
+func connectServices(ctx context.Context, logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stream.StreamAdapter) error {
+	errCh := make(chan error, 2)
+
+	var grp sync.WaitGroup
+	grp.Go(func() {
+		if err := streamAdapter.Connect(ctx); err != nil {
+			logger.Error("failed to connect to stream adapter", slog.Any("err", err))
+			errCh <- err
+		}
+	})
+	grp.Go(func() {
+		if err := dbAdapter.Connect(ctx); err != nil {
+			logger.Error("failed to connect to database", slog.Any("err", err))
+			errCh <- err
+		}
+	})
+	grp.Wait()
+
+	close(errCh)
+
+	var errs []error
+	for err := range errCh {
+		errs = append(errs, err)
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+
+	return nil
 }
 
 func waitForDatabase(ctx context.Context, logger *slog.Logger, dbAdapter database.Adapter) error {

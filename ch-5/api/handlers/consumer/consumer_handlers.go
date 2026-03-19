@@ -52,7 +52,8 @@ func (h *ConsumerHandlers) RegisterHandlers(mux *http.ServeMux) {
 	mux.Handle("POST /login", mdl.Resolve(web.WithRequestCtx(h.logger, h.Login)))
 
 	// Note: OnStartup adds an admin/password test user.
-	// To create the first "real" user, login as admin. Typically, this would be done through a separate admin API, but this is fine for now.
+	// To create the first "real" user, login as admin. Typically, this would be done through a
+	// separate admin API, but this is fine for now.
 
 	// Authenticated routes
 	mdl.Use(h.authenticator.AuthenticationMiddleware(h.verifyPublicUser))

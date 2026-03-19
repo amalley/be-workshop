@@ -6,20 +6,30 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/amalley/be-workshop/ch-5/api/database"
 	"github.com/amalley/be-workshop/ch-5/api/web"
 )
 
 type WikiStreamOption func(*WikiStreamOptions)
 
 type WikiStreamOptions struct {
-	Logger        *slog.Logger
-	URL           *url.URL
-	Doer          web.RequestDoer
-	Topic         string
-	Brokers       []string
-	RetryAttempts int
-	FetchMaxWait  time.Duration
-	FetchMinBytes int32
+	DBWriter        database.Writer
+	Logger          *slog.Logger
+	URL             *url.URL
+	Doer            web.RequestDoer
+	Topic           string
+	ConsumerGroupID string
+	Brokers         []string
+	RetryAttempts   int
+	MaxPollRecords  int
+	FetchMaxWait    time.Duration
+	FetchMinBytes   int32
+}
+
+func WithDBWriter(writer database.Writer) WikiStreamOption {
+	return func(opts *WikiStreamOptions) {
+		opts.DBWriter = writer
+	}
 }
 
 func WithFetchMaxWait(wait time.Duration) WikiStreamOption {
@@ -76,16 +86,31 @@ func WithBrokers(brokers []string) WikiStreamOption {
 	}
 }
 
+func WithMaxPollRecords(max int) WikiStreamOption {
+	return func(opts *WikiStreamOptions) {
+		opts.MaxPollRecords = max
+	}
+}
+
+func WithConsumerGroupID(groupID string) WikiStreamOption {
+	return func(opts *WikiStreamOptions) {
+		opts.ConsumerGroupID = groupID
+	}
+}
+
 func DefaultWikiStreamOptions() *WikiStreamOptions {
 	return &WikiStreamOptions{
-		Logger:        slog.Default().With(slog.String("src", "WikiStreamAdapter")),
-		URL:           nil,
-		Topic:         "",
-		Brokers:       []string{},
-		RetryAttempts: 5,
-		Doer:          http.DefaultClient,
-		FetchMaxWait:  100 * time.Millisecond,
-		FetchMinBytes: 1024 * 10, // 10KB
+		DBWriter:        nil,
+		Logger:          slog.Default().With(slog.String("src", "WikiStreamAdapter")),
+		URL:             nil,
+		Topic:           "",
+		ConsumerGroupID: "wikistats-group",
+		Brokers:         []string{},
+		RetryAttempts:   5,
+		Doer:            http.DefaultClient,
+		FetchMaxWait:    100 * time.Millisecond,
+		FetchMinBytes:   1024 * 10, // 10KB
+		MaxPollRecords:  100,       // 100 messages
 	}
 }
 

@@ -8,25 +8,29 @@ import (
 )
 
 type Args struct {
-	Port               string
-	URL                string
-	LogLevel           string
-	DBHost             string
-	DBKeyspace         string
-	KafkaBrokers       string
-	KafkaTopic         string
-	KafkaRetryAttempts int
+	Port                 int
+	URL                  string
+	LogLevel             string
+	DBHost               string
+	DBKeyspace           string
+	KafkaBrokers         string
+	KafkaTopic           string
+	KafkaConsumerGroupID string
+	KafkaRetryAttempts   int
+	KafkaMaxPollRecords  int
 }
 
 func ParseArgs(defaults *Args) *Args {
-	flag.StringVar(&defaults.Port, "port", defaults.Port, "Port to listen on")
+	flag.IntVar(&defaults.Port, "port", defaults.Port, "Port to listen on")
 	flag.StringVar(&defaults.URL, "url", defaults.URL, "WikiMedia stream url")
 	flag.StringVar(&defaults.LogLevel, "log-level", defaults.LogLevel, "Application's log level (debug, info, warning, error)")
 	flag.StringVar(&defaults.DBHost, "db-host", defaults.DBHost, "Database host")
 	flag.StringVar(&defaults.DBKeyspace, "db-keyspace", defaults.DBKeyspace, "Database keyspace")
 	flag.StringVar(&defaults.KafkaBrokers, "kafka-brokers", defaults.KafkaBrokers, "Comma-separated list of Kafka brokers")
 	flag.StringVar(&defaults.KafkaTopic, "kafka-topic", defaults.KafkaTopic, "Kafka topic to produce to / consume from")
+	flag.StringVar(&defaults.KafkaConsumerGroupID, "kafka-consumer-group-id", defaults.KafkaConsumerGroupID, "Kafka consumer group ID")
 	flag.IntVar(&defaults.KafkaRetryAttempts, "kafka-retry-attempts", defaults.KafkaRetryAttempts, "Number of retry attempts for Kafka operations")
+	flag.IntVar(&defaults.KafkaMaxPollRecords, "kafka-max-poll-records", defaults.KafkaMaxPollRecords, "Maximum number of records to poll from Kafka in a single request")
 	flag.Parse()
 	return defaults
 }

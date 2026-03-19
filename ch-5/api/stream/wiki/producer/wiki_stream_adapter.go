@@ -86,30 +86,31 @@ func (a *WikiStreamAdapterProducer) Consume(ctx context.Context) error {
 		return ErrNotConnected
 	}
 
+	a.cfg.Logger.Info("connecting to wiki stream", slog.String("url", a.cfg.URL.String()))
 	backoff := time.Second
 
-	a.cfg.Logger.Info("connecting to wiki stream", slog.String("url", a.cfg.URL.String()))
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
-		// Attempt to connect to and read the stream. If the connection is lost, attempt to reconnect.
-		stream, err := a.connectStream(ctx)
-		if err != nil {
-			return err
-		}
-
-		err = a.readStream(ctx, stream)
-		stream.Close()
-
-		if err == nil || errors.Is(err, io.EOF) {
+		// Attempt to open and read the stream. If the connection is lost, attempt to reconnect.
+		stream, err := a.openStream(ctx)
+		if err == nil {
+			a.cfg.Logger.Info("connected to wiki stream",
+				slog.String("url", a.cfg.URL.String()),
+				slog.String("last_event_id", a.LastEventID),
+			)
 			backoff = time.Second
-			continue
+
+			err = a.readStream(ctx, stream)
+			stream.Close()
 		}
 
-		if errors.Is(err, context.Canceled) {
-			return nil
+		// If the context was canceled, return the error to allow for graceful shutdown.
+		// Otherwise, log the error and attempt to reconnect.
+		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			return ctx.Err()
 		}
 
 		a.cfg.Logger.Error("stream connection lost",
@@ -174,7 +175,7 @@ func (a *WikiStreamAdapterProducer) readStream(ctx context.Context, stream io.Re
 	}
 }
 
-func (a *WikiStreamAdapterProducer) connectStream(ctx context.Context) (io.ReadCloser, error) {
+func (a *WikiStreamAdapterProducer) openStream(ctx context.Context) (io.ReadCloser, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.cfg.URL.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %s", err.Error())
@@ -191,6 +192,7 @@ func (a *WikiStreamAdapterProducer) connectStream(ctx context.Context) (io.ReadC
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 

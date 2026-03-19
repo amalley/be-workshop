@@ -2,10 +2,15 @@ package consumer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
+	"sync"
 
 	"github.com/amalley/be-workshop/ch-5/api/stream"
 	"github.com/amalley/be-workshop/ch-5/api/stream/wiki"
+	"github.com/amalley/be-workshop/ch-5/api/utils"
+	"github.com/amalley/be-workshop/ch-5/models"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -13,6 +18,8 @@ var (
 	ErrAlreadyConnected = errors.New("stream adapter is already connected")
 	ErrNotConnected     = errors.New("stream adapter is not connected")
 )
+
+const MaxBatchSize = 100
 
 var _ stream.StreamAdapter = &WikiStreamAdapterConsumer{}
 
@@ -35,6 +42,7 @@ func (a *WikiStreamAdapterConsumer) Connect(ctx context.Context) error {
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(a.cfg.Brokers...),
 		kgo.ConsumeTopics(a.cfg.Topic),
+		kgo.ConsumerGroup(a.cfg.ConsumerGroupID),
 		kgo.FetchMaxWait(a.cfg.FetchMaxWait),
 		kgo.FetchMinBytes(a.cfg.FetchMinBytes),
 	)
@@ -62,5 +70,143 @@ func (a *WikiStreamAdapterConsumer) Consume(ctx context.Context) error {
 		return ErrNotConnected
 	}
 
-	return nil
+	for {
+		// Check if the context is done before polling for records to allow for graceful shutdown.
+		if utils.CtxDone(ctx) {
+			return ctx.Err()
+		}
+
+		fetches := a.client.PollRecords(ctx, a.cfg.MaxPollRecords)
+		if fetches.IsClientClosed() {
+			return ErrNotConnected
+		}
+
+		// Check if the context is done after polling for records to allow for graceful shutdown.
+		// This is important in case the ctx was canceled while waiting for the records to be fetched.
+		if utils.CtxDone(ctx) {
+			return ctx.Err()
+		}
+
+		if errs := fetches.Errors(); len(errs) > 0 {
+			a.cfg.Logger.Error("error fetching records", slog.Any("errs", errs))
+		}
+
+		var records []*kgo.Record
+		fetches.EachRecord(func(record *kgo.Record) {
+			records = append(records, record)
+		})
+
+		batches := utils.BatchSlice(records, MaxBatchSize)
+		totals, err := a.handleBatches(ctx, batches)
+		if err != nil {
+			a.cfg.Logger.Error("error handling batches", slog.Any("err", err))
+		}
+
+		if a.cfg.DBWriter == nil {
+			a.cfg.Logger.Info("batch processed", slog.Any("totals", totals))
+			continue
+		}
+
+		if err := a.cfg.DBWriter.InsertStats(ctx, totals); err != nil {
+			a.cfg.Logger.Error("error inserting stats to database", slog.Any("err", err))
+		}
+	}
+}
+
+func (a *WikiStreamAdapterConsumer) handleBatches(ctx context.Context, batches [][]*kgo.Record) (*models.WikiStatsCounts, error) {
+	var grp sync.WaitGroup
+	grp.Add(len(batches))
+
+	errch := make(chan error, len(batches))
+	countch := make(chan *models.WikiStatsCounts, len(batches))
+
+	// Process each batch in a separate goroutine to allow for concurrent processing of records.
+	for i, batch := range batches {
+		go func(batch []*kgo.Record, batchNum int) {
+			defer grp.Done()
+
+			if utils.CtxDone(ctx) {
+				return
+			}
+
+			count, err := a.handleBatch(ctx, batch)
+			if err != nil {
+				a.cfg.Logger.Error("error handling batch",
+					slog.Any("err", err),
+					slog.Int("batch_num", batchNum),
+				)
+				errch <- err
+			}
+			countch <- count
+		}(batch, i)
+	}
+	grp.Wait()
+
+	close(errch)
+	close(countch)
+
+	if utils.CtxDone(ctx) {
+		return nil, ctx.Err()
+	}
+
+	var errs []error
+	for err := range errch {
+		errs = append(errs, err)
+	}
+
+	var totals models.WikiStatsCounts
+	for count := range countch {
+		totals.Messages += count.Messages
+		totals.Users += count.Users
+		totals.Bots += count.Bots
+		totals.Servers += count.Servers
+	}
+
+	if len(errs) > 0 {
+		return &totals, errors.Join(errs...)
+	}
+	return &totals, nil
+}
+
+func (a *WikiStreamAdapterConsumer) handleBatch(ctx context.Context, batch []*kgo.Record) (*models.WikiStatsCounts, error) {
+	if utils.CtxDone(ctx) {
+		return nil, ctx.Err()
+	}
+
+	errs := make([]error, 0, len(batch))
+
+	var counts models.WikiStatsCounts
+	for _, record := range batch {
+		var message models.WikiStreamMessage
+
+		if err := json.Unmarshal(record.Value, &message); err != nil {
+			a.cfg.Logger.Error("error unmarshaling record", slog.Any("err", err))
+			errs = append(errs, err)
+			continue
+		}
+
+		if message.Meta.ID != "" {
+			counts.Messages++
+		}
+		if message.User != "" {
+			counts.Users++
+		}
+		if message.Bot {
+			counts.Bots++
+		}
+		if message.ServerName != "" {
+			counts.Servers++
+		}
+	}
+
+	// Ensure the context is not done before attempting to insert stats to allow for graceful shutdown.
+	if utils.CtxDone(ctx) {
+		return nil, ctx.Err()
+	}
+
+	if len(errs) > 0 {
+		return &counts, errors.Join(errs...)
+	}
+
+	return &counts, nil
 }
