@@ -1,186 +1,153 @@
 package producer
 
-// var ErrMockConnectErr = errors.New("Mock Connect Err")
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"net/url"
+	"sync"
+	"testing"
+	"time"
 
-// type MockClient struct {
-// }
+	"github.com/amalley/be-workshop/ch-5/api/stream/wiki"
+	"github.com/testcontainers/testcontainers-go/modules/redpanda"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
+)
 
-// func (c *MockClient) Do(req *http.Request) (*http.Response, error) {
-// 	return &http.Response{
-// 		StatusCode: http.StatusOK,
-// 	}, nil
-// }
+type MockStream struct {
+	response string
+}
 
-// type MockErrorClient struct {
-// }
+func (m *MockStream) Do(req *http.Request) (*http.Response, error) {
+	r, w := io.Pipe()
+	go func() {
+		resp := []byte(m.response)
+		if !bytes.HasSuffix(resp, []byte("\n\n")) {
+			resp = append(resp, []byte("\n\n")...)
+		}
+		for {
+			select {
+			case <-req.Context().Done():
+				w.Close()
+				return
+			default:
+				// Write an event to the pipe
+				_, err := w.Write(resp)
+				if err != nil {
+					return
+				}
+				// Simulate a delay between events
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+	}()
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       r,
+	}, nil
+}
 
-// func (c *MockErrorClient) Do(req *http.Request) (*http.Response, error) {
-// 	return nil, ErrMockConnectErr
-// }
+func TestWikiProducerIntegration(t *testing.T) {
+	const rawSSE = `data: {"meta": {"id": "1"}, "user": "testuser", "server_name": "testserver", "bot": false}`
+	const expectedJSON = `{"meta": {"id": "1"}, "user": "testuser", "server_name": "testserver", "bot": false}`
 
-// type MockBufferClient struct {
-// 	buffer io.ReadCloser
-// }
+	ctx := context.Background()
 
-// func (c *MockBufferClient) Do(req *http.Request) (*http.Response, error) {
-// 	return &http.Response{
-// 		StatusCode: http.StatusOK,
-// 		Body:       c.buffer,
-// 	}, nil
-// }
+	container, err := redpanda.Run(ctx, "redpandadata/redpanda:v23.3.13")
+	if err != nil {
+		t.Fatalf("failed to start container: %v", err)
+	}
+	defer func() {
+		if err := container.Terminate(ctx); err != nil {
+			t.Fatalf("failed to terminate container: %v", err)
+		}
+	}()
 
-// type MockDBAdapter struct {
-// 	messages map[string]struct{}
-// 	users    map[string]struct{}
-// 	servers  map[string]struct{}
-// 	bots     map[string]struct{}
-// }
+	brokers, err := container.KafkaSeedBroker(ctx)
+	if err != nil {
+		t.Fatalf("failed to get broker address: %v", err)
+	}
 
-// func NewMockDBAdapter() *MockDBAdapter {
-// 	return &MockDBAdapter{
-// 		messages: make(map[string]struct{}),
-// 		users:    make(map[string]struct{}),
-// 		servers:  make(map[string]struct{}),
-// 		bots:     make(map[string]struct{}),
-// 	}
-// }
+	u, _ := url.Parse("https://example.com")
+	adapter := NewWikiStreamAdapterWithClient(
+		wiki.WithURL(u),
+		wiki.WithDoer(&MockStream{response: rawSSE}),
+		wiki.WithTopic("test-topic"),
+		wiki.WithBrokers([]string{brokers}),
+		wiki.WithRetryAttempts(20),
+		wiki.WithAutoTopicCreation(false),
+	)
 
-// func (a *MockDBAdapter) Connect(ctx context.Context) error {
-// 	return nil
-// }
+	if err := adapter.Connect(ctx); err != nil {
+		t.Fatalf("failed to connect stream adapter: %v", err)
+	}
 
-// func (a *MockDBAdapter) Close(ctx context.Context) error {
-// 	return nil
-// }
+	adminClinet := kadm.NewClient(adapter.client)
 
-// func (a *MockDBAdapter) IsReady() bool {
-// 	return true
-// }
+	resp, err := adminClinet.CreateTopics(ctx, 1, 1, nil, "test-topic")
+	if err != nil {
+		t.Fatalf("failed to create topic: %v", err)
+	}
 
-// func (a *MockDBAdapter) InsertStats(ctx context.Context, stats models.WikiStatsModel) error {
-// 	a.messages[stats.Message] = struct{}{}
-// 	a.servers[stats.Server] = struct{}{}
+	if err := resp.Error(); err != nil {
+		t.Fatalf("error creating topic: %v", err)
+	}
 
-// 	if stats.IsBot {
-// 		a.bots[stats.User] = struct{}{}
-// 	} else {
-// 		a.users[stats.User] = struct{}{}
-// 	}
+	var grp sync.WaitGroup
+	grp.Go(func() {
+		wait := time.NewTimer(2 * time.Second)
+		defer wait.Stop()
 
-// 	return nil
-// }
+		consumeCtx, consumeCancel := context.WithCancel(ctx)
+		defer consumeCancel()
 
-// func (a *MockDBAdapter) GetStats(ctx context.Context) (models.WikiStatsCounts, error) {
-// 	return models.WikiStatsCounts{
-// 		Messages: len(a.messages),
-// 		Users:    len(a.users),
-// 		Servers:  len(a.servers),
-// 		Bots:     len(a.bots),
-// 	}, nil
-// }
+		go func() {
+			select {
+			case <-consumeCtx.Done():
+				return
+			case <-wait.C:
+				consumeCancel()
+			}
+		}()
 
-// func (a *MockDBAdapter) CreateUser(ctx context.Context, n, p string) error {
-// 	return nil
-// }
+		if err := adapter.Consume(consumeCtx); err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("failed to consume from stream adapter: %v", err)
+		}
+	})
+	grp.Wait()
 
-// func (a *MockDBAdapter) DeleteUser(ctx context.Context, n gocql.UUID) error {
-// 	return nil
-// }
+	client, err := kgo.NewClient(
+		kgo.SeedBrokers(brokers),
+		kgo.ConsumeTopics("test-topic"),
+		kgo.FetchMaxWait(5*time.Second),
+		kgo.ConsumeStartOffset(kgo.NewOffset().AtStart()),
+	)
+	if err != nil {
+		t.Fatalf("failed to create Kafka client: %v", err)
+	}
+	defer client.Close()
 
-// func (a *MockDBAdapter) GetUser(ctx context.Context, n string) (models.User, bool, error) {
-// 	return models.User{}, false, nil
-// }
+	pollCtx, pollCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer pollCancel()
 
-// func (a *MockDBAdapter) GetUserByID(ctx context.Context, userID gocql.UUID) (models.User, bool, error) {
-// 	return models.User{}, false, nil
-// }
+	fetches := client.PollRecords(pollCtx, 1)
+	if errs := fetches.Errors(); len(errs) > 0 {
+		for _, err := range errs {
+			t.Errorf("fetch error: %v", err.Err)
+		}
+	}
 
-// func TestWikiStreamAdapterConnect(t *testing.T) {
-// 	logger := slog.New(slog.NewJSONHandler(t.Output(), nil))
-// 	ctx := context.Background()
-// 	db := NewMockDBAdapter()
+	var found bool
+	fetches.EachRecord(func(record *kgo.Record) {
+		if string(bytes.TrimSpace(record.Value)) == expectedJSON {
+			found = true
+		}
+	})
 
-// 	u, _ := url.Parse("https://example.com")
-
-// 	adapter := NewWikiStreamAdapterWithClient(logger, db, &MockClient{}, u)
-// 	if err := adapter.Connect(ctx); err != nil {
-// 		t.Errorf("Expected to connect, got error instead: %s", err.Error())
-// 	}
-// 	adapter.Close(ctx)
-
-// 	adapter = NewWikiStreamAdapterWithClient(logger, db, &MockErrorClient{}, u)
-// 	if err := adapter.Connect(ctx); err == nil || !errors.Is(err, ErrMockConnectErr) {
-// 		t.Errorf("Expected error '%s', got '%s'", ErrMockConnectErr.Error(), err.Error())
-// 	}
-// 	adapter.Close(ctx) // This close isn't needed, but it's consistant with the adapter pattern
-// }
-
-// func TestWikiStreamAdapterConume(t *testing.T) {
-// 	r, w := io.Pipe()
-
-// 	client := &MockBufferClient{buffer: r}
-// 	logger := slog.New(slog.NewJSONHandler(t.Output(), nil))
-// 	ctx, cancel := context.WithCancel(context.Background())
-// 	db := NewMockDBAdapter()
-
-// 	go func() {
-// 		b, err := json.Marshal(&models.WikiStreamMessage{
-// 			Meta: models.WikiStreamMessageMeta{
-// 				ID: "MockID1",
-// 			},
-// 			User:       "Steve",
-// 			ServerName: "MockServer1",
-// 			Bot:        false,
-// 		})
-// 		if err != nil {
-// 			t.Error(err)
-// 			w.CloseWithError(err)
-// 			return
-// 		}
-
-// 		fmt.Fprintf(w, "%s%s\n", dataTag, b)
-// 		w.Close()
-// 	}()
-// 	time.Sleep(time.Second / 4) // Wait for work
-
-// 	u, _ := url.Parse("https://example.com")
-
-// 	adapter := NewWikiStreamAdapterWithClient(logger, db, client, u)
-// 	if err := adapter.Connect(ctx); err != nil {
-// 		t.Errorf("Expected to connect, got error instead: %s", err.Error())
-// 	}
-
-// 	errCh := make(chan error, 1)
-// 	go func() {
-// 		if err := adapter.Consume(ctx); err != nil {
-// 			errCh <- err
-// 		}
-// 	}()
-// 	time.Sleep(time.Second / 4) // Wait for work
-
-// 	cancel() // Cancel the consume
-
-// 	err := <-errCh
-// 	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
-// 		t.Errorf("Expected to consume, got error instead: %s", err.Error())
-// 	}
-
-// 	stats, err := db.GetStats(ctx)
-
-// 	if err != nil {
-// 		t.Errorf("Expected to get stats, got error instead: %s", err.Error())
-// 	}
-
-// 	if stats.Messages != 1 {
-// 		t.Errorf("Expected 1 message, got %s", strconv.Itoa(stats.Messages))
-// 	}
-// 	if stats.Users != 1 {
-// 		t.Errorf("Expected 1 user, got %s", strconv.Itoa(stats.Users))
-// 	}
-// 	if stats.Bots != 0 {
-// 		t.Errorf("Expected 0 bots, got %s", strconv.Itoa(stats.Bots))
-// 	}
-// 	if stats.Servers != 1 {
-// 		t.Errorf("Expected 1 server, got %s", strconv.Itoa(stats.Servers))
-// 	}
-// }
+	if !found {
+		t.Fatal("expected to find the produced message, but it was not found")
+	}
+}

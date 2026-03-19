@@ -51,13 +51,17 @@ func (a *WikiStreamAdapterProducer) Connect(ctx context.Context) error {
 		return ErrAlreadyConnected
 	}
 
-	client, err := kgo.NewClient(
+	opt := []kgo.Opt{
 		kgo.SeedBrokers(a.cfg.Brokers...),
 		kgo.DefaultProduceTopic(a.cfg.Topic),
 		kgo.RecordRetries(a.cfg.RetryAttempts),
-		kgo.AllowAutoTopicCreation(),
-		kgo.MetadataMaxAge(5*time.Second),
-	)
+		kgo.MetadataMaxAge(5 * time.Second),
+	}
+	if a.cfg.AutoTopicCreation {
+		opt = append(opt, kgo.AllowAutoTopicCreation())
+	}
+
+	client, err := kgo.NewClient(opt...)
 	if err != nil {
 		return err
 	}
@@ -89,6 +93,7 @@ func (a *WikiStreamAdapterProducer) Consume(ctx context.Context) error {
 	a.cfg.Logger.Info("connecting to wiki stream", slog.String("url", a.cfg.URL.String()))
 	backoff := time.Second
 
+	defer a.client.Flush(ctx)
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -166,6 +171,9 @@ func (a *WikiStreamAdapterProducer) readStream(ctx context.Context, stream io.Re
 			}
 
 			a.client.Produce(ctx, record, func(r *kgo.Record, err error) {
+				if ctx.Err() != nil {
+					return
+				}
 				if err != nil {
 					a.cfg.Logger.Error("failed to produce message to Kafka", slog.Any("err", err))
 					return

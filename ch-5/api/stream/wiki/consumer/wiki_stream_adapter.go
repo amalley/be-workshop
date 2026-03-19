@@ -91,7 +91,7 @@ func (a *WikiStreamAdapterConsumer) Consume(ctx context.Context) error {
 			a.cfg.Logger.Error("error fetching records", slog.Any("errs", errs))
 		}
 
-		var records []*kgo.Record
+		records := make([]*kgo.Record, 0, a.cfg.MaxPollRecords)
 		fetches.EachRecord(func(record *kgo.Record) {
 			records = append(records, record)
 		})
@@ -137,7 +137,9 @@ func (a *WikiStreamAdapterConsumer) handleBatches(ctx context.Context, batches [
 				)
 				errch <- err
 			}
-			countch <- count
+			if count != nil {
+				countch <- count
+			}
 		}(batch, i)
 	}
 	grp.Wait()

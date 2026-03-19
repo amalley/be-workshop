@@ -13,17 +13,24 @@ import (
 type WikiStreamOption func(*WikiStreamOptions)
 
 type WikiStreamOptions struct {
-	DBWriter        database.Writer
-	Logger          *slog.Logger
-	URL             *url.URL
-	Doer            web.RequestDoer
-	Topic           string
-	ConsumerGroupID string
-	Brokers         []string
-	RetryAttempts   int
-	MaxPollRecords  int
-	FetchMaxWait    time.Duration
-	FetchMinBytes   int32
+	DBWriter          database.Writer
+	Logger            *slog.Logger
+	URL               *url.URL
+	Doer              web.RequestDoer
+	Topic             string
+	ConsumerGroupID   string
+	Brokers           []string
+	RetryAttempts     int
+	MaxPollRecords    int
+	FetchMaxWait      time.Duration
+	FetchMinBytes     int32
+	AutoTopicCreation bool
+}
+
+func WithAutoTopicCreation(enabled bool) WikiStreamOption {
+	return func(opts *WikiStreamOptions) {
+		opts.AutoTopicCreation = enabled
+	}
 }
 
 func WithDBWriter(writer database.Writer) WikiStreamOption {
@@ -100,17 +107,18 @@ func WithConsumerGroupID(groupID string) WikiStreamOption {
 
 func DefaultWikiStreamOptions() *WikiStreamOptions {
 	return &WikiStreamOptions{
-		DBWriter:        nil,
-		Logger:          slog.Default().With(slog.String("src", "WikiStreamAdapter")),
-		URL:             nil,
-		Topic:           "",
-		ConsumerGroupID: "wikistats-group",
-		Brokers:         []string{},
-		RetryAttempts:   5,
-		Doer:            http.DefaultClient,
-		FetchMaxWait:    100 * time.Millisecond,
-		FetchMinBytes:   1024 * 10, // 10KB
-		MaxPollRecords:  100,       // 100 messages
+		DBWriter:          nil,
+		Logger:            slog.Default(),
+		URL:               nil,
+		Topic:             "",
+		ConsumerGroupID:   "wikistats-group",
+		Brokers:           []string{},
+		RetryAttempts:     5,
+		Doer:              http.DefaultClient,
+		FetchMaxWait:      100 * time.Millisecond,
+		FetchMinBytes:     1024 * 10, // 10KB
+		MaxPollRecords:    100,       // 100 messages
+		AutoTopicCreation: true,
 	}
 }
 
