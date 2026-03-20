@@ -4,7 +4,7 @@ on:
     branches: [ main ]
 
 env:
-  WORKING_DIR: ./ch-5
+  WORKING_DIR: ./ch-7
 
 jobs:
 
@@ -40,7 +40,7 @@ jobs:
         
       - name: Run tests
         working-directory: ${{ env.WORKING_DIR }}
-        run: go test -v ./api/...
+        run: go test -timeout=60s -v ./api/...
 
   # Builds the application using Docker to ensure it compiles successfully.
   build:

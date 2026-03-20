@@ -1,0 +1,11 @@
+kafka:
+  brokers: ["redpanda:29092"]
+serde:
+  protobuf:
+    enabled: true
+    mappings:
+      - topicName: "wikistats"
+        valueProtoType: "wiki.WikiStreamMessage"
+    fileSystem:
+      enabled: true
+      paths: ["/etc/protobuf"]
