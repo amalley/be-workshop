@@ -4,13 +4,16 @@ on:
     branches: [ main ]
 
 env:
-  WORKING_DIR: ./ch-4
+  WORKING_DIR: ./ch-5
 
 jobs:
 
   # Builds and pushes the Docker image to GitHub Container Registry for deployment.
   build-and-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 

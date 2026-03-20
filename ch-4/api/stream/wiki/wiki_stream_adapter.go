@@ -11,10 +11,10 @@ import (
 	"net/http"
 	neturl "net/url"
 
-	"github.com/AMalley/be-workshop/ch-4/api/database"
-	"github.com/AMalley/be-workshop/ch-4/api/stream"
-	"github.com/AMalley/be-workshop/ch-4/api/utils"
-	"github.com/AMalley/be-workshop/ch-4/models"
+	"github.com/amalley/be-workshop/ch-4/api/database"
+	"github.com/amalley/be-workshop/ch-4/api/stream"
+	"github.com/amalley/be-workshop/ch-4/api/utils"
+	"github.com/amalley/be-workshop/ch-4/models"
 )
 
 var dataTag = []byte("data: ")

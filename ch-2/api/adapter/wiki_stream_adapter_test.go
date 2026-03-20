@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AMalley/be-workshop/ch-2/api/database"
-	"github.com/AMalley/be-workshop/ch-2/models"
+	"github.com/amalley/be-workshop/ch-2/api/database"
+	"github.com/amalley/be-workshop/ch-2/models"
 )
 
 var ErrMockConnectErr = errors.New("Mock Connect Err")

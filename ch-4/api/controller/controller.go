@@ -3,7 +3,7 @@ package controller
 import (
 	"context"
 
-	"github.com/AMalley/be-workshop/ch-4/api/web"
+	"github.com/amalley/be-workshop/ch-4/api/web"
 )
 
 // Controller defines the interface for the server's handler controller

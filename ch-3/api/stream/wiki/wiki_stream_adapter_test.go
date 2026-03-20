@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AMalley/be-workshop/ch-3/models"
+	"github.com/amalley/be-workshop/ch-3/models"
 	"github.com/gocql/gocql"
 )
 

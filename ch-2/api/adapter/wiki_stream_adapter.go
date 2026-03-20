@@ -13,8 +13,8 @@ import (
 	"net/url"
 	netUrl "net/url"
 
-	"github.com/AMalley/be-workshop/ch-2/api/database"
-	"github.com/AMalley/be-workshop/ch-2/models"
+	"github.com/amalley/be-workshop/ch-2/api/database"
+	"github.com/amalley/be-workshop/ch-2/models"
 )
 
 var dataTag = []byte("data: ")

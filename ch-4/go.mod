@@ -1,4 +1,4 @@
-module github.com/AMalley/be-workshop/ch-4
+module github.com/amalley/be-workshop/ch-4
 
 go 1.26.1
 

@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/AMalley/be-workshop/ch-4/api/database"
-	"github.com/AMalley/be-workshop/ch-4/models"
+	"github.com/amalley/be-workshop/ch-4/api/database"
+	"github.com/amalley/be-workshop/ch-4/models"
 	"github.com/gocql/gocql"
 	"golang.org/x/crypto/bcrypt"
 )
