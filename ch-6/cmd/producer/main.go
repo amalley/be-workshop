@@ -12,14 +12,14 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/amalley/be-workshop/ch-5/api/handlers/producer"
-	"github.com/amalley/be-workshop/ch-5/api/middleware"
-	"github.com/amalley/be-workshop/ch-5/api/server"
-	"github.com/amalley/be-workshop/ch-5/api/stream"
-	"github.com/amalley/be-workshop/ch-5/api/stream/wiki"
-	wikiproducer "github.com/amalley/be-workshop/ch-5/api/stream/wiki/producer"
-	"github.com/amalley/be-workshop/ch-5/api/utils"
-	"github.com/amalley/be-workshop/ch-5/cli"
+	"github.com/amalley/be-workshop/ch-6/api/handlers/producer"
+	"github.com/amalley/be-workshop/ch-6/api/middleware"
+	"github.com/amalley/be-workshop/ch-6/api/server"
+	"github.com/amalley/be-workshop/ch-6/api/stream"
+	"github.com/amalley/be-workshop/ch-6/api/stream/wiki"
+	wikiproducer "github.com/amalley/be-workshop/ch-6/api/stream/wiki/producer"
+	"github.com/amalley/be-workshop/ch-6/api/utils"
+	"github.com/amalley/be-workshop/ch-6/cli"
 )
 
 func main() {
