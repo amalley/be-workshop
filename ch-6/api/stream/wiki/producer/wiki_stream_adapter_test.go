@@ -13,19 +13,26 @@ import (
 
 	"github.com/amalley/be-workshop/ch-6/api/stream/wiki"
 	"github.com/amalley/be-workshop/ch-6/api/stream/wiki/producer"
+	"github.com/amalley/be-workshop/ch-6/models/gen/pbwiki"
 	"github.com/testcontainers/testcontainers-go/modules/redpanda"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"google.golang.org/protobuf/proto"
+)
+
+const (
+	testId = "deadbeef-0000-0000-0000-000000000001"
+	rawSSE = `data: {"$schema":"/test/schema/1.0.0","meta":{"uri":"https://test.wiki/wiki/Test_Page","request_id":"deadbeef-0000-0000-0000-000000000001","id":"deadbeef-0000-0000-0000-000000000001","domain":"test.wiki","stream":"test.stream","dt":"2026-01-01T12:00:00.000Z","topic":"test.topic","partition":0,"offset":123456789},"id":999999999,"type":"edit","namespace":0,"title":"Test Page","title_url":"https://test.wiki/wiki/Test_Page","comment":"This is a test comment for unit testing purposes","timestamp":1735732800,"user":"TestUserBot","bot":true,"notify_url":"https://test.wiki/w/index.php?diff=999&oldid=888&rcid=999999999","server_url":"https://test.wiki","server_name":"test.wiki","server_script_path":"/w","wiki":"testwiki","parsedcomment":"<a href=\"/wiki/Test_Page\" title=\"Test Page\">Test Page</a> modified by test bot"}`
 )
 
 type MockStream struct {
-	response string
+	response []byte
 }
 
 func (m *MockStream) Do(req *http.Request) (*http.Response, error) {
 	r, w := io.Pipe()
 	go func() {
-		resp := []byte(m.response)
+		resp := m.response
 		if !bytes.HasSuffix(resp, []byte("\n\n")) {
 			resp = append(resp, []byte("\n\n")...)
 		}
@@ -52,9 +59,6 @@ func (m *MockStream) Do(req *http.Request) (*http.Response, error) {
 }
 
 func TestWikiProducerIntegration(t *testing.T) {
-	const rawSSE = `data: {"meta": {"id": "1"}, "user": "testuser", "server_name": "testserver", "bot": false}`
-	const expectedJSON = `{"meta": {"id": "1"}, "user": "testuser", "server_name": "testserver", "bot": false}`
-
 	ctx := context.Background()
 
 	container, err := redpanda.Run(ctx, "redpandadata/redpanda:v23.3.13")
@@ -75,7 +79,7 @@ func TestWikiProducerIntegration(t *testing.T) {
 	u, _ := url.Parse("https://example.com")
 	adapter := producer.NewWikiStreamAdapterWithClient(
 		wiki.WithURL(u),
-		wiki.WithDoer(&MockStream{response: rawSSE}),
+		wiki.WithDoer(&MockStream{response: []byte(rawSSE)}),
 		wiki.WithTopic("test-topic"),
 		wiki.WithBrokers([]string{brokers}),
 		wiki.WithRetryAttempts(20),
@@ -86,9 +90,9 @@ func TestWikiProducerIntegration(t *testing.T) {
 		t.Fatalf("failed to connect stream adapter: %v", err)
 	}
 
-	adminClinet := kadm.NewClient(adapter.Client())
+	adminClient := kadm.NewClient(adapter.Client())
 
-	resp, err := adminClinet.CreateTopics(ctx, 1, 1, nil, "test-topic")
+	resp, err := adminClient.CreateTopics(ctx, 1, 1, nil, "test-topic")
 	if err != nil {
 		t.Fatalf("failed to create topic: %v", err)
 	}
@@ -143,7 +147,19 @@ func TestWikiProducerIntegration(t *testing.T) {
 
 	var found bool
 	fetches.EachRecord(func(record *kgo.Record) {
-		if string(bytes.TrimSpace(record.Value)) == expectedJSON {
+		var message pbwiki.WikiStreamMessage
+		if err := proto.Unmarshal(record.Value, &message); err != nil {
+			t.Errorf("error unmarshaling record: %v", err)
+			return
+		}
+
+		id := "not found"
+
+		if message.Meta != nil && message.Meta.Id != nil {
+			id = *message.Meta.Id
+		}
+
+		if id == testId {
 			found = true
 		}
 	})

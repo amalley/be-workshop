@@ -13,12 +13,19 @@ import (
 
 	"github.com/amalley/be-workshop/ch-6/api/stream"
 	"github.com/amalley/be-workshop/ch-6/api/stream/wiki"
+	"github.com/amalley/be-workshop/ch-6/models/gen/pbwiki"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
 	idTag   = []byte("id:")
 	dataTag = []byte("data:")
+
+	protojsonUnmarshalOptions = protojson.UnmarshalOptions{
+		DiscardUnknown: true,
+	}
 
 	ErrNotConnected     = errors.New("not connected to stream")
 	ErrAlreadyConnected = errors.New("already connected to stream")
@@ -164,10 +171,19 @@ func (a *WikiStreamAdapterProducer) readStream(ctx context.Context, stream io.Re
 		}
 
 		if after, ok := bytes.CutPrefix(line, dataTag); ok {
-			trimmed := bytes.TrimSpace(after)
+			after = bytes.TrimSpace(after)
 
-			value := make([]byte, len(trimmed))
-			copy(value, trimmed)
+			var message pbwiki.WikiStreamMessage
+			if err := protojsonUnmarshalOptions.Unmarshal(after, &message); err != nil {
+				a.cfg.Logger.Error("error unmarshaling message", slog.Any("err", err), slog.String("raw", string(after)))
+				continue
+			}
+
+			value, err := proto.Marshal(&message)
+			if err != nil {
+				a.cfg.Logger.Error("error marshaling message", slog.Any("err", err), slog.String("raw", string(after)))
+				continue
+			}
 
 			record := &kgo.Record{
 				Topic: a.cfg.Topic,
@@ -179,7 +195,7 @@ func (a *WikiStreamAdapterProducer) readStream(ctx context.Context, stream io.Re
 					return
 				}
 				if err != nil {
-					a.cfg.Logger.Error("failed to produce message to Kafka", slog.Any("err", err))
+					a.cfg.Logger.Error("failed to produce message to Kafka", slog.Any("err", err), slog.String("raw", string(after)))
 					return
 				}
 			})

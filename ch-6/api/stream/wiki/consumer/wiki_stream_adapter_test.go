@@ -10,10 +10,23 @@ import (
 	"github.com/amalley/be-workshop/ch-6/api/stream/wiki"
 	"github.com/amalley/be-workshop/ch-6/api/stream/wiki/consumer"
 	"github.com/amalley/be-workshop/ch-6/models"
+	"github.com/amalley/be-workshop/ch-6/models/gen/pbwiki"
 	"github.com/gocql/gocql"
 	"github.com/testcontainers/testcontainers-go/modules/redpanda"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+)
+
+const (
+	rawSSE = `{"$schema":"/test/schema/1.0.0","meta":{"uri":"https://test.wiki/wiki/Test_Page","request_id":"deadbeef-0000-0000-0000-000000000001","id":"deadbeef-0000-0000-0000-000000000001","domain":"test.wiki","stream":"test.stream","dt":"2026-01-01T12:00:00.000Z","topic":"test.topic","partition":0,"offset":123456789},"id":999999999,"type":"edit","namespace":0,"title":"Test Page","title_url":"https://test.wiki/wiki/Test_Page","comment":"This is a test comment for unit testing purposes","timestamp":1735732800,"user":"TestUserBot","bot":true,"notify_url":"https://test.wiki/w/index.php?diff=999&oldid=888&rcid=999999999","server_url":"https://test.wiki","server_name":"test.wiki","server_script_path":"/w","wiki":"testwiki","parsedcomment":"<a href=\"/wiki/Test_Page\" title=\"Test Page\">Test Page</a> modified by test bot"}`
+)
+
+var (
+	protojsonUnmarshalOptions = protojson.UnmarshalOptions{
+		DiscardUnknown: true,
+	}
 )
 
 type MockDBWriter struct {
@@ -80,12 +93,20 @@ func TestWikiStreamAdapterConsumer(t *testing.T) {
 
 	const produceCount = 10
 
-	rawSSE := []byte(`{"meta": {"id": "1"}, "user": "testuser", "server_name": "testserver", "bot": false}`)
-	records := make([]*kgo.Record, produceCount)
+	var message pbwiki.WikiStreamMessage
+	if err := protojsonUnmarshalOptions.Unmarshal([]byte(rawSSE), &message); err != nil {
+		t.Fatalf("error unmarshaling raw SSE: %v", err)
+	}
 
+	protoData, err := proto.Marshal(&message)
+	if err != nil {
+		t.Fatalf("error marshaling message to protobuf: %v", err)
+	}
+
+	records := make([]*kgo.Record, produceCount)
 	for i := range records {
 		records[i] = &kgo.Record{
-			Value: rawSSE,
+			Value: protoData,
 		}
 	}
 
@@ -132,10 +153,10 @@ func TestWikiStreamAdapterConsumer(t *testing.T) {
 	if db.totals.Users != produceCount {
 		t.Errorf("expected %d users, got %d", produceCount, db.totals.Users)
 	}
+	if db.totals.Bots != produceCount {
+		t.Errorf("expected %d bots, got %d", produceCount, db.totals.Bots)
+	}
 	if db.totals.Servers != produceCount {
 		t.Errorf("expected %d servers, got %d", produceCount, db.totals.Servers)
-	}
-	if db.totals.Bots != 0 {
-		t.Errorf("expected 0 bots, got %d", db.totals.Bots)
 	}
 }

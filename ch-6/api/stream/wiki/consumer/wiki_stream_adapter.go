@@ -2,7 +2,6 @@ package consumer
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"sync"
@@ -11,7 +10,9 @@ import (
 	"github.com/amalley/be-workshop/ch-6/api/stream/wiki"
 	"github.com/amalley/be-workshop/ch-6/api/utils"
 	"github.com/amalley/be-workshop/ch-6/models"
+	"github.com/amalley/be-workshop/ch-6/models/gen/pbwiki"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -179,15 +180,15 @@ func (a *WikiStreamAdapterConsumer) handleBatch(ctx context.Context, batch []*kg
 
 	var counts models.WikiStatsCounts
 	for _, record := range batch {
-		var message models.WikiStreamMessage
+		var message pbwiki.WikiStreamMessage
 
-		if err := json.Unmarshal(record.Value, &message); err != nil {
-			a.cfg.Logger.Error("error unmarshaling record", slog.Any("err", err))
+		if err := proto.Unmarshal(record.Value, &message); err != nil {
+			a.cfg.Logger.Error("error unmarshaling record", slog.Any("err", err), slog.String("raw", string(record.Value)))
 			errs = append(errs, err)
 			continue
 		}
 
-		if message.Meta.ID != "" {
+		if message.Meta.Id != nil {
 			counts.Messages++
 		}
 		if message.User != "" {

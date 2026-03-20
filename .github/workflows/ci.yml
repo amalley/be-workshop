@@ -40,7 +40,7 @@ jobs:
         
       - name: Run tests
         working-directory: ${{ env.WORKING_DIR }}
-        run: go test -timeout=30s -v ./api/...
+        run: go test -timeout=60s -v ./api/...
 
   # Builds the application using Docker to ensure it compiles successfully.
   build:

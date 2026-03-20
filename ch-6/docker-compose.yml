@@ -45,10 +45,14 @@ services:
     container_name: redpanda-console
     networks:
       - wikistats-networks
-    env_file:
-      - .env
     ports:
       - "8080:8080"
+    volumes:
+      - ./protobuf:/etc/protobuf
+      - ./redpanda-console.cfg.yml:/etc/redpanda/redpanda-console.cfg.yml
+    environment:
+      KAFKA_BROKERS: "redpanda:29092"
+      CONFIG_FILEPATH: "/etc/redpanda/redpanda-console.cfg.yml"
     depends_on:
       redpanda:
         condition: service_healthy
