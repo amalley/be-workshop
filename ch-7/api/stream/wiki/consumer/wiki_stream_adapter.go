@@ -108,7 +108,7 @@ func (a *WikiStreamAdapterConsumer) Consume(ctx context.Context) error {
 			records = append(records, record)
 		})
 
-		a.recordMetrics(MetricsWikiRedpandaEventsConsumed, int64(len(records)))
+		a.recordMetrics(MetricsWikiRedpandaEventsConsumed, float64(len(records)))
 
 		batches := utils.BatchSlice(records, MaxBatchSize)
 		totals, success, failed, err := a.handleBatches(ctx, batches)
@@ -117,8 +117,8 @@ func (a *WikiStreamAdapterConsumer) Consume(ctx context.Context) error {
 			a.cfg.Logger.Error("error handling batches", slog.Any("err", err))
 		}
 
-		a.recordMetrics(MetricsWikiRedpandaEventsProcessedSuccessfully, success)
-		a.recordMetrics(MetricsWikiRedpandaEventsProcessedFailed, failed)
+		a.recordMetrics(MetricsWikiRedpandaEventsProcessedSuccessfully, float64(success))
+		a.recordMetrics(MetricsWikiRedpandaEventsProcessedFailed, float64(failed))
 
 		if a.cfg.DBWriter == nil {
 			a.cfg.Logger.Info("batch processed", slog.Any("totals", totals))
@@ -241,8 +241,10 @@ func (a *WikiStreamAdapterConsumer) handleBatch(ctx context.Context, batch []*kg
 	return &counts, success, failed, nil
 }
 
-func (a *WikiStreamAdapterConsumer) recordMetrics(id string, count int64) {
+func (a *WikiStreamAdapterConsumer) recordMetrics(id string, count float64) {
 	if a.cfg.Metrics != nil {
-		a.cfg.Metrics.Increment(metrics.RecorderID(id), float64(count))
+		if err := a.cfg.Metrics.Increment(metrics.RecorderID(id), count); err != nil {
+			a.cfg.Logger.Error("failed to record metrics", slog.Any("err", err), slog.String("metric", id))
+		}
 	}
 }

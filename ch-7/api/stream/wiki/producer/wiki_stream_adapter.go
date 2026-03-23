@@ -239,6 +239,8 @@ func (a *WikiStreamAdapterProducer) openStream(ctx context.Context) (io.ReadClos
 
 func (a *WikiStreamAdapterProducer) recordMetrics(id string, count float64) {
 	if a.cfg.Metrics != nil {
-		a.cfg.Metrics.Increment(metrics.RecorderID(id), count)
+		if err := a.cfg.Metrics.Increment(metrics.RecorderID(id), count); err != nil {
+			a.cfg.Logger.Error("failed to record metrics", slog.Any("err", err), slog.String("metric", id))
+		}
 	}
 }
