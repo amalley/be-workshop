@@ -27,6 +27,13 @@ type WikiStreamOptions struct {
 	FetchMaxWait      time.Duration
 	FetchMinBytes     int32
 	AutoTopicCreation bool
+	DisableAutoCommit bool
+}
+
+func WithDisableAutoCommit(disable bool) WikiStreamOption {
+	return func(opts *WikiStreamOptions) {
+		opts.DisableAutoCommit = disable
+	}
 }
 
 func WithMetrics(adapter metrics.Adapter) WikiStreamOption {
@@ -128,6 +135,7 @@ func DefaultWikiStreamOptions() *WikiStreamOptions {
 		FetchMinBytes:     1024 * 10, // 10KB
 		MaxPollRecords:    100,       // 100 messages
 		AutoTopicCreation: true,
+		DisableAutoCommit: false,
 	}
 }
 

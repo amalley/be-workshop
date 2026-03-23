@@ -129,13 +129,9 @@ func startup(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stre
 			return err
 		}
 
-		// Start consuming in a separate goroutine to avoid blocking the remaining startup process.
-		// The stream adapter will handle reconnection logic internally, so we don't need to worry about that here.
-		go func() {
-			if err := streamAdapter.Consume(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				logger.Error("stream consumption ended with error", slog.Any("err", err))
-			}
-		}()
+		if err := streamAdapter.Consume(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("stream consumption ended with error", slog.Any("err", err))
+		}
 
 		return nil
 	}
