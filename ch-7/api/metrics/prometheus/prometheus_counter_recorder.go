@@ -3,6 +3,7 @@ package prometheus
 import (
 	"github.com/amalley/be-workshop/ch-7/api/metrics"
 	p "github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 type PrometheusCounter struct {
@@ -10,13 +11,15 @@ type PrometheusCounter struct {
 	counter p.Counter
 }
 
-func NewPrometheusCounter(name, help string) *PrometheusCounter {
+func NewPrometheusCounter(name, help string, registry *p.Registry) *PrometheusCounter {
 	return &PrometheusCounter{
 		id: metrics.RecorderID(name),
-		counter: p.NewCounter(p.CounterOpts{
-			Name: name,
-			Help: help,
-		}),
+		counter: promauto.With(registry).NewCounter(
+			p.CounterOpts{
+				Name: name,
+				Help: help,
+			},
+		),
 	}
 }
 

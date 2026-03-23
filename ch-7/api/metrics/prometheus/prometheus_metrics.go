@@ -6,12 +6,14 @@ import (
 
 	"github.com/amalley/be-workshop/ch-7/api/metrics"
 	"github.com/amalley/be-workshop/ch-7/api/web"
+	p "github.com/prometheus/client_golang/prometheus"
 )
 
 var _ metrics.Adapter = &PrometheusAdapter{}
 
 type PrometheusAdapter struct {
-	logger *slog.Logger
+	logger   *slog.Logger
+	registry *p.Registry
 
 	recorders metrics.RecorderTable
 }
@@ -19,8 +21,13 @@ type PrometheusAdapter struct {
 func NewPrometheusAdapter(logger *slog.Logger) *PrometheusAdapter {
 	return &PrometheusAdapter{
 		logger:    logger.With("src", "PrometheusAdapter"),
+		registry:  p.NewRegistry(),
 		recorders: make(metrics.RecorderTable),
 	}
+}
+
+func (a *PrometheusAdapter) Registry() *p.Registry {
+	return a.registry
 }
 
 func (a *PrometheusAdapter) HttpHandler(ctx *web.RequestCtx) {

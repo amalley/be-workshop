@@ -48,10 +48,12 @@ func main() {
 		wikiprom.NewPrometheusCounter(
 			wikiprod.MetricsWikiStreamEventsConsumed,
 			wikiprod.MetricsWikiStreamEventsConsumedHelp,
+			mtx.Registry(),
 		),
 		wikiprom.NewPrometheusCounter(
 			wikiprod.MetricsWikiStreamEventsProduced,
 			wikiprod.MetricsWikiStreamEventsProducedHelp,
+			mtx.Registry(),
 		),
 	)
 

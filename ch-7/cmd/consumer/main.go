@@ -60,14 +60,17 @@ func main() {
 		wikiprom.NewPrometheusCounter(
 			wikicons.MetricsWikiRedpandaEventsConsumed,
 			wikicons.MetricsWikiRedpandaEventsConsumedHelp,
+			mtx.Registry(),
 		),
 		wikiprom.NewPrometheusCounter(
 			wikicons.MetricsWikiRedpandaEventsProcessedSuccessfully,
 			wikicons.MetricsWikiRedpandaEventsProcessedSuccessfullyHelp,
+			mtx.Registry(),
 		),
 		wikiprom.NewPrometheusCounter(
 			wikicons.MetricsWikiRedpandaEventsProcessedFailed,
 			wikicons.MetricsWikiRedpandaEventsProcessedFailedHelp,
+			mtx.Registry(),
 		),
 	)
 
