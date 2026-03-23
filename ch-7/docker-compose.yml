@@ -1,5 +1,6 @@
 services:
 
+  # ScyllaDB service to run the Cassandra-compatible NoSQL database
   scylla:
     image: scylladb/scylla:latest
     container_name: scylla_db
@@ -15,6 +16,7 @@ services:
     volumes:
       - scylla_data:/var/lib/scylla
 
+  # Redpanda service to run the Kafka-compatible streaming platform
   redpanda:
     image: redpandadata/redpanda:v23.3.13
     container_name: redpanda
@@ -40,6 +42,7 @@ services:
     networks:
       - wikistats-networks
 
+  # Redpanda Console service to provide a web-based interface for managing and monitoring Redpanda
   console:
     image: redpandadata/console:latest
     container_name: redpanda-console
@@ -53,10 +56,47 @@ services:
     environment:
       KAFKA_BROKERS: "redpanda:29092"
       CONFIG_FILEPATH: "/etc/redpanda/redpanda-console.cfg.yml"
+      CONSOLE_METRICS_ENABLED: "true"
     depends_on:
       redpanda:
         condition: service_healthy
 
+  # Prometheus service to scrape metrics from Redpanda and Redpanda Console
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    networks:
+      - wikistats-networks
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9090"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+  # Grafana service to visualize metrics from Prometheus
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    networks:
+      - wikistats-networks
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
+  # Wikistats Producer service to generate and send Wikipedia edit statistics to Redpanda
   wikistats-producer:
     container_name: wikistats-producer
     build:
@@ -79,6 +119,7 @@ services:
       redpanda:
         condition: service_healthy
 
+  # Wikistats Consumer service to consume Wikipedia edit statistics from Redpanda and store them in ScyllaDB
   wikistats-consumer:
     container_name: wikistats-consumer
     build:

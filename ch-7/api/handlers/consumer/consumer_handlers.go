@@ -21,10 +21,12 @@ import (
 const iss = "wikistats-app"
 
 // Ensure ConsumerHandlers implements all required handler interfaces.
-var _ handlers.HealthHandlers = &ConsumerHandlers{}
-var _ handlers.LoginHandlers = &ConsumerHandlers{}
-var _ handlers.StatsHandlers = &ConsumerHandlers{}
-var _ handlers.UserHandlers = &ConsumerHandlers{}
+var (
+	_ handlers.HealthHandlers = &ConsumerHandlers{}
+	_ handlers.LoginHandlers  = &ConsumerHandlers{}
+	_ handlers.StatsHandlers  = &ConsumerHandlers{}
+	_ handlers.UserHandlers   = &ConsumerHandlers{}
+)
 
 type ConsumerHandlers struct {
 	logger *slog.Logger

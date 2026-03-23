@@ -19,6 +19,13 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const (
+	MetricsWikiStreamEventsConsumed     = "wiki_stream_events_consumed"
+	MetricsWikiStreamEventsConsumedHelp = "Total number of wiki events consumed from the stream"
+	MetricsWikiStreamEventsProduced     = "wiki_stream_events_produced"
+	MetricsWikiStreamEventsProducedHelp = "Total number of wiki events produced to Kafka"
+)
+
 var (
 	idTag   = []byte("id:")
 	dataTag = []byte("data:")
@@ -31,7 +38,7 @@ var (
 	ErrAlreadyConnected = errors.New("already connected to stream")
 )
 
-var _ stream.StreamAdapter = &WikiStreamAdapterProducer{}
+var _ stream.Adapter = &WikiStreamAdapterProducer{}
 
 type WikiStreamAdapterProducer struct {
 	cfg    *wiki.WikiStreamOptions

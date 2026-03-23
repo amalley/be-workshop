@@ -1,5 +1,6 @@
 kafka:
   brokers: ["redpanda:29092"]
+
 serde:
   protobuf:
     enabled: true

@@ -17,12 +17,14 @@ import (
 	"github.com/amalley/be-workshop/ch-7/api/database"
 	"github.com/amalley/be-workshop/ch-7/api/database/scylla"
 	"github.com/amalley/be-workshop/ch-7/api/handlers/consumer"
+	wikiprom "github.com/amalley/be-workshop/ch-7/api/metrics/prometheus"
 	"github.com/amalley/be-workshop/ch-7/api/middleware"
 	"github.com/amalley/be-workshop/ch-7/api/server"
 	"github.com/amalley/be-workshop/ch-7/api/stream"
 	"github.com/amalley/be-workshop/ch-7/api/stream/wiki"
-	wikiconsumer "github.com/amalley/be-workshop/ch-7/api/stream/wiki/consumer"
+	wikicons "github.com/amalley/be-workshop/ch-7/api/stream/wiki/consumer"
 	"github.com/amalley/be-workshop/ch-7/api/utils"
+	"github.com/amalley/be-workshop/ch-7/api/web"
 	"github.com/amalley/be-workshop/ch-7/cli"
 	"github.com/gocql/gocql"
 )
@@ -40,7 +42,6 @@ func main() {
 		KafkaConsumerGroupID: cli.GetEnv("KAFKA_CONSUMER_GROUP_ID", "wikistats-consumers"),
 	})
 
-	mux := http.NewServeMux()
 	lgr := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: cli.ParseLogLevel(args.LogLevel),
 	})).With("svc", "wikistats-consumer")
@@ -54,7 +55,31 @@ func main() {
 		scylla.WithRetryTime(5*time.Second),
 	)
 
-	adp := wikiconsumer.NewStreamAdapter(
+	mtx := wikiprom.NewPrometheusAdapter(lgr)
+	mtx.AddRecorders(
+		wikiprom.NewPrometheusCounter(
+			wikicons.MetricsWikiRedpandaEventsConsumed,
+			wikicons.MetricsWikiRedpandaEventsConsumedHelp,
+		),
+		wikiprom.NewPrometheusCounter(
+			wikicons.MetricsWikiRedpandaEventsProcessedSuccessfully,
+			wikicons.MetricsWikiRedpandaEventsProcessedSuccessfullyHelp,
+		),
+		wikiprom.NewPrometheusCounter(
+			wikicons.MetricsWikiRedpandaEventsProcessedFailed,
+			wikicons.MetricsWikiRedpandaEventsProcessedFailedHelp,
+		),
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", web.WithRequestCtx(lgr, mtx.HttpHandler))
+
+	pub := public.NewPublicAuthenticator(lgr)
+
+	hdl := consumer.NewConsumerHandlers(lgr, syl, pub)
+	hdl.RegisterHandlers(mux)
+
+	adp := wikicons.NewStreamAdapter(
 		wiki.WithLogger(lgr),
 		wiki.WithBrokers(strings.Split(args.KafkaBrokers, ",")),
 		wiki.WithTopic(args.KafkaTopic),
@@ -63,12 +88,8 @@ func main() {
 		wiki.WithFetchMaxWait(500*time.Millisecond),
 		wiki.WithMaxPollRecords(args.KafkaMaxPollRecords),
 		wiki.WithDBWriter(syl),
+		wiki.WithMetrics(mtx),
 	)
-
-	pub := public.NewPublicAuthenticator(lgr)
-
-	hdl := consumer.NewConsumerHandlers(lgr, syl, pub)
-	hdl.RegisterHandlers(mux)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -85,7 +106,7 @@ func main() {
 	).Run(ctx)
 }
 
-func startup(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stream.StreamAdapter) server.ServerHook {
+func startup(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stream.Adapter) server.ServerHook {
 	return func(ctx context.Context) error {
 		if utils.CtxDone(ctx) {
 			logger.Info("failed to start", slog.String("reason", ctx.Err().Error()))
@@ -118,7 +139,7 @@ func startup(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stre
 	}
 }
 
-func shutdown(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stream.StreamAdapter) server.ServerHook {
+func shutdown(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stream.Adapter) server.ServerHook {
 	return func(ctx context.Context) error {
 		if utils.CtxDone(ctx) {
 			logger.Info("failed to shutdown", slog.String("reason", ctx.Err().Error()))
@@ -137,7 +158,7 @@ func shutdown(logger *slog.Logger, dbAdapter database.Adapter, streamAdapter str
 	}
 }
 
-func connectServices(ctx context.Context, logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stream.StreamAdapter) error {
+func connectServices(ctx context.Context, logger *slog.Logger, dbAdapter database.Adapter, streamAdapter stream.Adapter) error {
 	errCh := make(chan error, 2)
 
 	var grp sync.WaitGroup

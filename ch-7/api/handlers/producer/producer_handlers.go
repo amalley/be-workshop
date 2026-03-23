@@ -32,3 +32,11 @@ func (h *ProducerHandlers) RegisterHandlers(mux *http.ServeMux) {
 func (c *ProducerHandlers) Liveness(ctx *web.RequestCtx) {
 	ctx.Send(http.StatusOK, []byte("OK"))
 }
+
+// --------------------------------------------------------------------------------------------
+// Metrics
+// --------------------------------------------------------------------------------------------
+
+func (h *ProducerHandlers) Metrics(ctx *web.RequestCtx) {
+	ctx.Send(http.StatusOK, []byte(`TODO: Implement metrics endpoint`))
+}

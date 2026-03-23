@@ -13,12 +13,14 @@ import (
 	"syscall"
 
 	"github.com/amalley/be-workshop/ch-7/api/handlers/producer"
+	wikiprom "github.com/amalley/be-workshop/ch-7/api/metrics/prometheus"
 	"github.com/amalley/be-workshop/ch-7/api/middleware"
 	"github.com/amalley/be-workshop/ch-7/api/server"
 	"github.com/amalley/be-workshop/ch-7/api/stream"
 	"github.com/amalley/be-workshop/ch-7/api/stream/wiki"
-	wikiproducer "github.com/amalley/be-workshop/ch-7/api/stream/wiki/producer"
+	wikiprod "github.com/amalley/be-workshop/ch-7/api/stream/wiki/producer"
 	"github.com/amalley/be-workshop/ch-7/api/utils"
+	"github.com/amalley/be-workshop/ch-7/api/web"
 	"github.com/amalley/be-workshop/ch-7/cli"
 )
 
@@ -31,7 +33,6 @@ func main() {
 		KafkaTopic:   cli.GetEnv("KAFKA_TOPIC", "wikistats"),
 	})
 
-	mux := http.NewServeMux()
 	lgr := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: cli.ParseLogLevel(args.LogLevel),
 	})).With("svc", "wikistats-producer")
@@ -42,16 +43,32 @@ func main() {
 		os.Exit(1)
 	}
 
-	adp := wikiproducer.NewStreamAdapter(
+	mtx := wikiprom.NewPrometheusAdapter(lgr)
+	mtx.AddRecorders(
+		wikiprom.NewPrometheusCounter(
+			wikiprod.MetricsWikiStreamEventsConsumed,
+			wikiprod.MetricsWikiStreamEventsConsumedHelp,
+		),
+		wikiprom.NewPrometheusCounter(
+			wikiprod.MetricsWikiStreamEventsProduced,
+			wikiprod.MetricsWikiStreamEventsProducedHelp,
+		),
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", web.WithRequestCtx(lgr, mtx.HttpHandler))
+
+	hld := producer.NewProducerHandlers(lgr)
+	hld.RegisterHandlers(mux)
+
+	adp := wikiprod.NewStreamAdapter(
 		wiki.WithLogger(lgr),
 		wiki.WithURL(u),
 		wiki.WithTopic(args.KafkaTopic),
 		wiki.WithBrokers(strings.Split(args.KafkaBrokers, ",")),
 		wiki.WithRetryAttempts(args.KafkaRetryAttempts),
+		wiki.WithMetrics(mtx),
 	)
-
-	hld := producer.NewProducerHandlers(lgr)
-	hld.RegisterHandlers(mux)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -68,7 +85,7 @@ func main() {
 	).Run(ctx)
 }
 
-func startup(logger *slog.Logger, streamAdapter stream.StreamAdapter) func(context.Context) error {
+func startup(logger *slog.Logger, streamAdapter stream.Adapter) func(context.Context) error {
 	return func(ctx context.Context) error {
 		if utils.CtxDone(ctx) {
 			logger.Info("failed to start", slog.Any("reason", ctx.Err().Error()))
@@ -94,7 +111,7 @@ func startup(logger *slog.Logger, streamAdapter stream.StreamAdapter) func(conte
 	}
 }
 
-func shutdown(logger *slog.Logger, streamAdapter stream.StreamAdapter) func(context.Context) error {
+func shutdown(logger *slog.Logger, streamAdapter stream.Adapter) func(context.Context) error {
 	return func(ctx context.Context) error {
 		if err := streamAdapter.Close(ctx); err != nil {
 			logger.Error("failed to close stream adapter", "error", err.Error())

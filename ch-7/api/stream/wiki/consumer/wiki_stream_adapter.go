@@ -15,6 +15,15 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const (
+	MetricsWikiRedpandaEventsConsumed                  = "wiki_redpanda_events_consumed"
+	MetricsWikiRedpandaEventsConsumedHelp              = "Total number of wiki events consumed from Redpanda"
+	MetricsWikiRedpandaEventsProcessedSuccessfully     = "wiki_redpanda_events_processed_successfully"
+	MetricsWikiRedpandaEventsProcessedSuccessfullyHelp = "Total number of wiki events processed successfully from Redpanda "
+	MetricsWikiRedpandaEventsProcessedFailed           = "wiki_redpanda_events_processed_failed"
+	MetricsWikiRedpandaEventsProcessedFailedHelp       = "Total number of wiki eventsthat failed to process from Redpanda "
+)
+
 var (
 	ErrAlreadyConnected = errors.New("stream adapter is already connected")
 	ErrNotConnected     = errors.New("stream adapter is not connected")
@@ -22,7 +31,7 @@ var (
 
 const MaxBatchSize = 100
 
-var _ stream.StreamAdapter = &WikiStreamAdapterConsumer{}
+var _ stream.Adapter = &WikiStreamAdapterConsumer{}
 
 type WikiStreamAdapterConsumer struct {
 	cfg    *wiki.WikiStreamOptions

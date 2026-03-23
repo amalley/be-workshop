@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/amalley/be-workshop/ch-7/api/database"
+	"github.com/amalley/be-workshop/ch-7/api/metrics"
 	"github.com/amalley/be-workshop/ch-7/api/web"
 )
 
@@ -14,6 +15,7 @@ type WikiStreamOption func(*WikiStreamOptions)
 
 type WikiStreamOptions struct {
 	DBWriter          database.Writer
+	Metrics           metrics.Adapter
 	Logger            *slog.Logger
 	URL               *url.URL
 	Doer              web.RequestDoer
@@ -25,6 +27,12 @@ type WikiStreamOptions struct {
 	FetchMaxWait      time.Duration
 	FetchMinBytes     int32
 	AutoTopicCreation bool
+}
+
+func WithMetrics(adapter metrics.Adapter) WikiStreamOption {
+	return func(opts *WikiStreamOptions) {
+		opts.Metrics = adapter
+	}
 }
 
 func WithAutoTopicCreation(enabled bool) WikiStreamOption {
@@ -108,6 +116,7 @@ func WithConsumerGroupID(groupID string) WikiStreamOption {
 func DefaultWikiStreamOptions() *WikiStreamOptions {
 	return &WikiStreamOptions{
 		DBWriter:          nil,
+		Metrics:           nil,
 		Logger:            slog.Default(),
 		URL:               nil,
 		Topic:             "",
