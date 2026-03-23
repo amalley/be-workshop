@@ -51,11 +51,11 @@ services:
     ports:
       - "8080:8080"
     volumes:
+      - ./.configs/redpanda/console.yml:/etc/redpanda/console.yml
       - ./protobuf:/etc/protobuf
-      - ./redpanda-console.cfg.yml:/etc/redpanda/redpanda-console.cfg.yml
     environment:
       KAFKA_BROKERS: "redpanda:29092"
-      CONFIG_FILEPATH: "/etc/redpanda/redpanda-console.cfg.yml"
+      CONFIG_FILEPATH: "/etc/redpanda/console.yml"
       CONSOLE_METRICS_ENABLED: "true"
     depends_on:
       redpanda:
@@ -76,7 +76,7 @@ services:
       retries: 3
       start_period: 5s
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./.configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     depends_on:
       redpanda:
         condition: service_healthy
@@ -89,9 +89,11 @@ services:
       - wikistats-networks
     ports:
       - "3000:3000"
+    volumes:
+      - ./.configs/grafana/provisioning:/etc/grafana/provisioning      
     environment:
-      GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: "/etc/grafana/provisioning/dashboards/definitions/wikistats-producer-dashboard.json"
     depends_on:
       prometheus:
         condition: service_healthy
