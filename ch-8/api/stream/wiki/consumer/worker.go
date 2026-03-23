@@ -52,6 +52,7 @@ func (w *worker) connect(ctx context.Context) error {
 		kgo.SeedBrokers(w.cfg.Brokers...),
 		kgo.ConsumeTopics(w.cfg.Topic),
 		kgo.ConsumerGroup(w.cfg.ConsumerGroupID),
+		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
 		kgo.FetchMaxWait(w.cfg.FetchMaxWait),
 		kgo.FetchMinBytes(w.cfg.FetchMinBytes),
 		kgo.DisableAutoCommit(),
@@ -104,6 +105,11 @@ func (w *worker) consume(ctx context.Context) error {
 			fetches.EachRecord(func(record *kgo.Record) {
 				records = append(records, record)
 			})
+
+			if len(records) == 0 {
+				w.logger.Info("no records fetched, polling again")
+				return nil
+			}
 
 			// Record the number of events consumed for monitoring purposes.
 			w.recordMetrics(MetricsWikiRedpandaEventsConsumed, float64(len(records)))

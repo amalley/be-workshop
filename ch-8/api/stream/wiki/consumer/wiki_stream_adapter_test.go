@@ -132,7 +132,8 @@ func TestWikiStreamAdapterConsumer(t *testing.T) {
 	}
 	defer adapter.Close(ctx)
 
-	consumeCtx, consumeCancel := context.WithTimeout(ctx, 5*time.Second)
+	consumeCtx, consumeCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer consumeCancel()
 
 	// Start consuming in a separate goroutine
 	go func() {
@@ -141,11 +142,21 @@ func TestWikiStreamAdapterConsumer(t *testing.T) {
 		}
 	}()
 
-	time.Sleep(5 * time.Second) // Wait for the message to be consumed
-	consumeCancel()             // Signal the consumer to stop
+	success := false
+	for range 10 {
+		db.mu.Lock()
+		if db.totals.Messages == produceCount {
+			success = true
+			db.mu.Unlock()
+			break
+		}
+		db.mu.Unlock()
+		time.Sleep(1 * time.Second)
+	}
 
-	db.mu.Lock()
-	defer db.mu.Unlock()
+	if !success {
+		t.Errorf("Timed out waiting for messages. Got %d, want %d", db.totals.Messages, produceCount)
+	}
 
 	if db.totals.Messages != produceCount {
 		t.Errorf("expected %d messages, got %d", produceCount, db.totals.Messages)
