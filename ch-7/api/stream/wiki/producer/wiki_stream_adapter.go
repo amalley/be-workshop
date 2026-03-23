@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/amalley/be-workshop/ch-7/api/metrics"
 	"github.com/amalley/be-workshop/ch-7/api/stream"
 	"github.com/amalley/be-workshop/ch-7/api/stream/wiki"
 	"github.com/amalley/be-workshop/ch-7/models/gen/pbwiki"
@@ -22,8 +23,8 @@ import (
 const (
 	MetricsWikiStreamEventsConsumed     = "wiki_stream_events_consumed"
 	MetricsWikiStreamEventsConsumedHelp = "Total number of wiki events consumed from the stream"
-	MetricsWikiStreamEventsProduced     = "wiki_stream_events_produced"
-	MetricsWikiStreamEventsProducedHelp = "Total number of wiki events produced to Kafka"
+	MetricsWikiRecordsProduced          = "wiki_records_produced"
+	MetricsWikiRecordsProducedHelp      = "Total number of wiki records produced to Kafka"
 )
 
 var (
@@ -197,6 +198,7 @@ func (a *WikiStreamAdapterProducer) readStream(ctx context.Context, stream io.Re
 				Value: value,
 			}
 
+			a.recordMetrics(MetricsWikiStreamEventsConsumed, 1)
 			a.client.Produce(ctx, record, func(r *kgo.Record, err error) {
 				if ctx.Err() != nil {
 					return
@@ -205,6 +207,7 @@ func (a *WikiStreamAdapterProducer) readStream(ctx context.Context, stream io.Re
 					a.cfg.Logger.Error("failed to produce message to Kafka", slog.Any("err", err), slog.String("raw", string(after)))
 					return
 				}
+				a.recordMetrics(MetricsWikiRecordsProduced, 1)
 			})
 		}
 	}
@@ -232,4 +235,10 @@ func (a *WikiStreamAdapterProducer) openStream(ctx context.Context) (io.ReadClos
 	}
 
 	return resp.Body, nil
+}
+
+func (a *WikiStreamAdapterProducer) recordMetrics(id string, count float64) {
+	if a.cfg.Metrics != nil {
+		a.cfg.Metrics.Increment(metrics.RecorderID(id), count)
+	}
 }

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 
+	"github.com/amalley/be-workshop/ch-7/api/metrics"
 	"github.com/amalley/be-workshop/ch-7/api/stream"
 	"github.com/amalley/be-workshop/ch-7/api/stream/wiki"
 	"github.com/amalley/be-workshop/ch-7/api/utils"
@@ -106,11 +108,17 @@ func (a *WikiStreamAdapterConsumer) Consume(ctx context.Context) error {
 			records = append(records, record)
 		})
 
+		a.recordMetrics(MetricsWikiRedpandaEventsConsumed, int64(len(records)))
+
 		batches := utils.BatchSlice(records, MaxBatchSize)
-		totals, err := a.handleBatches(ctx, batches)
+		totals, success, failed, err := a.handleBatches(ctx, batches)
+
 		if err != nil {
 			a.cfg.Logger.Error("error handling batches", slog.Any("err", err))
 		}
+
+		a.recordMetrics(MetricsWikiRedpandaEventsProcessedSuccessfully, success)
+		a.recordMetrics(MetricsWikiRedpandaEventsProcessedFailed, failed)
 
 		if a.cfg.DBWriter == nil {
 			a.cfg.Logger.Info("batch processed", slog.Any("totals", totals))
@@ -123,12 +131,15 @@ func (a *WikiStreamAdapterConsumer) Consume(ctx context.Context) error {
 	}
 }
 
-func (a *WikiStreamAdapterConsumer) handleBatches(ctx context.Context, batches [][]*kgo.Record) (*models.WikiStatsCounts, error) {
+func (a *WikiStreamAdapterConsumer) handleBatches(ctx context.Context, batches [][]*kgo.Record) (*models.WikiStatsCounts, int64, int64, error) {
 	var grp sync.WaitGroup
 	grp.Add(len(batches))
 
 	errch := make(chan error, len(batches))
 	countch := make(chan *models.WikiStatsCounts, len(batches))
+
+	var successCount atomic.Int64
+	var failedCount atomic.Int64
 
 	// Process each batch in a separate goroutine to allow for concurrent processing of records.
 	for i, batch := range batches {
@@ -139,7 +150,7 @@ func (a *WikiStreamAdapterConsumer) handleBatches(ctx context.Context, batches [
 				return
 			}
 
-			count, err := a.handleBatch(ctx, batch)
+			count, success, failed, err := a.handleBatch(ctx, batch)
 			if err != nil {
 				a.cfg.Logger.Error("error handling batch",
 					slog.Any("err", err),
@@ -150,6 +161,8 @@ func (a *WikiStreamAdapterConsumer) handleBatches(ctx context.Context, batches [
 			if count != nil {
 				countch <- count
 			}
+			successCount.Add(int64(success))
+			failedCount.Add(int64(failed))
 		}(batch, i)
 	}
 	grp.Wait()
@@ -158,7 +171,7 @@ func (a *WikiStreamAdapterConsumer) handleBatches(ctx context.Context, batches [
 	close(countch)
 
 	if utils.CtxDone(ctx) {
-		return nil, ctx.Err()
+		return nil, successCount.Load(), failedCount.Load(), ctx.Err()
 	}
 
 	var errs []error
@@ -175,14 +188,17 @@ func (a *WikiStreamAdapterConsumer) handleBatches(ctx context.Context, batches [
 	}
 
 	if len(errs) > 0 {
-		return &totals, errors.Join(errs...)
+		return &totals, successCount.Load(), failedCount.Load(), errors.Join(errs...)
 	}
-	return &totals, nil
+	return &totals, successCount.Load(), failedCount.Load(), nil
 }
 
-func (a *WikiStreamAdapterConsumer) handleBatch(ctx context.Context, batch []*kgo.Record) (*models.WikiStatsCounts, error) {
+func (a *WikiStreamAdapterConsumer) handleBatch(ctx context.Context, batch []*kgo.Record) (*models.WikiStatsCounts, int64, int64, error) {
+	var success int64
+	var failed int64
+
 	if utils.CtxDone(ctx) {
-		return nil, ctx.Err()
+		return nil, success, failed, ctx.Err()
 	}
 
 	errs := make([]error, 0, len(batch))
@@ -194,6 +210,7 @@ func (a *WikiStreamAdapterConsumer) handleBatch(ctx context.Context, batch []*kg
 		if err := proto.Unmarshal(record.Value, &message); err != nil {
 			a.cfg.Logger.Error("error unmarshaling record", slog.Any("err", err), slog.String("raw", string(record.Value)))
 			errs = append(errs, err)
+			failed++
 			continue
 		}
 
@@ -209,16 +226,23 @@ func (a *WikiStreamAdapterConsumer) handleBatch(ctx context.Context, batch []*kg
 		if message.ServerName != "" {
 			counts.Servers++
 		}
+		success++
 	}
 
 	// Ensure the context is not done before attempting to insert stats to allow for graceful shutdown.
 	if utils.CtxDone(ctx) {
-		return nil, ctx.Err()
+		return nil, success, failed, ctx.Err()
 	}
 
 	if len(errs) > 0 {
-		return &counts, errors.Join(errs...)
+		return &counts, success, failed, errors.Join(errs...)
 	}
 
-	return &counts, nil
+	return &counts, success, failed, nil
+}
+
+func (a *WikiStreamAdapterConsumer) recordMetrics(id string, count int64) {
+	if a.cfg.Metrics != nil {
+		a.cfg.Metrics.Increment(metrics.RecorderID(id), float64(count))
+	}
 }

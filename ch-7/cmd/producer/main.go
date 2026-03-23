@@ -50,8 +50,8 @@ func main() {
 			mtx.Registry(),
 		),
 		wikiprom.NewPrometheusCounter(
-			wikiprod.MetricsWikiStreamEventsProduced,
-			wikiprod.MetricsWikiStreamEventsProducedHelp,
+			wikiprod.MetricsWikiRecordsProduced,
+			wikiprod.MetricsWikiRecordsProducedHelp,
 			mtx.Registry(),
 		),
 	)
