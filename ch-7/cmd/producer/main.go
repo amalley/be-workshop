@@ -20,7 +20,6 @@ import (
 	"github.com/amalley/be-workshop/ch-7/api/stream/wiki"
 	wikiprod "github.com/amalley/be-workshop/ch-7/api/stream/wiki/producer"
 	"github.com/amalley/be-workshop/ch-7/api/utils"
-	"github.com/amalley/be-workshop/ch-7/api/web"
 	"github.com/amalley/be-workshop/ch-7/cli"
 )
 
@@ -58,7 +57,7 @@ func main() {
 	)
 
 	mux := http.NewServeMux()
-	mux.Handle("GET /metrics", web.WithRequestCtx(lgr, mtx.HttpHandler))
+	mux.Handle("GET /metrics", http.HandlerFunc(mtx.HttpHandler))
 
 	hld := producer.NewProducerHandlers(lgr)
 	hld.RegisterHandlers(mux)

@@ -2,8 +2,7 @@ package metrics
 
 import (
 	"errors"
-
-	"github.com/amalley/be-workshop/ch-7/api/web"
+	"net/http"
 )
 
 var (
@@ -14,7 +13,7 @@ var (
 type RecorderTable map[RecorderID]Recorder
 
 type Adapter interface {
-	HttpHandler(ctx *web.RequestCtx)
+	HttpHandler(w http.ResponseWriter, r *http.Request)
 	AddRecorders(recorders ...Recorder)
 	Increment(recorderID RecorderID, value float64) error
 }

@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	"github.com/amalley/be-workshop/ch-7/api/metrics"
-	"github.com/amalley/be-workshop/ch-7/api/web"
 	p "github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var _ metrics.Adapter = &PrometheusAdapter{}
@@ -30,8 +30,8 @@ func (a *PrometheusAdapter) Registry() *p.Registry {
 	return a.registry
 }
 
-func (a *PrometheusAdapter) HttpHandler(ctx *web.RequestCtx) {
-	ctx.Send(http.StatusOK, []byte(`TODO: Implement Prometheus metrics endpoint`))
+func (a *PrometheusAdapter) HttpHandler(w http.ResponseWriter, r *http.Request) {
+	promhttp.HandlerFor(a.registry, promhttp.HandlerOpts{}).ServeHTTP(w, r)
 }
 
 func (a *PrometheusAdapter) AddRecorders(recorders ...metrics.Recorder) {

@@ -24,7 +24,6 @@ import (
 	"github.com/amalley/be-workshop/ch-7/api/stream/wiki"
 	wikicons "github.com/amalley/be-workshop/ch-7/api/stream/wiki/consumer"
 	"github.com/amalley/be-workshop/ch-7/api/utils"
-	"github.com/amalley/be-workshop/ch-7/api/web"
 	"github.com/amalley/be-workshop/ch-7/cli"
 	"github.com/gocql/gocql"
 )
@@ -75,7 +74,7 @@ func main() {
 	)
 
 	mux := http.NewServeMux()
-	mux.Handle("GET /metrics", web.WithRequestCtx(lgr, mtx.HttpHandler))
+	mux.Handle("GET /metrics", http.HandlerFunc(mtx.HttpHandler))
 
 	pub := public.NewPublicAuthenticator(lgr)
 
