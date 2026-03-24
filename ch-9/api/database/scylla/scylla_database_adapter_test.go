@@ -83,7 +83,11 @@ func TestScyllaIntegration(t *testing.T) {
 	if err := adapter.Connect(ctx); err != nil {
 		t.Fatalf("failed to connect to Scylla: %v", err)
 	}
-	defer adapter.Close(ctx)
+	defer func() {
+		if err := adapter.Close(ctx); err != nil {
+			t.Fatalf("failed to close Scylla connection: %v", err)
+		}
+	}()
 
 	t.Run("User Lifecycle and View Sync", func(t *testing.T) {
 		username := "testuser"

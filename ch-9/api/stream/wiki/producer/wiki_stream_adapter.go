@@ -108,7 +108,12 @@ func (a *WikiStreamAdapterProducer) Consume(ctx context.Context) error {
 	a.cfg.Logger.Info("connecting to wiki stream", slog.String("url", a.cfg.URL.String()))
 	backoff := time.Second
 
-	defer a.client.Flush(ctx)
+	defer func() {
+		if err := a.client.Flush(ctx); err != nil {
+			a.cfg.Logger.Error("failed to flush Kafka producer", slog.Any("err", err))
+		}
+		a.cfg.Logger.Info("stopped consuming wiki stream")
+	}()
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -124,7 +129,12 @@ func (a *WikiStreamAdapterProducer) Consume(ctx context.Context) error {
 			backoff = time.Second
 
 			err = a.readStream(ctx, stream)
-			stream.Close()
+			if err := stream.Close(); err != nil {
+				a.cfg.Logger.Error("failed to close stream", slog.Any("err", err))
+			}
+			if err != nil {
+				a.cfg.Logger.Error("error reading from stream", slog.Any("err", err))
+			}
 		}
 
 		// If the context was canceled, return the error to allow for graceful shutdown.
@@ -230,7 +240,9 @@ func (a *WikiStreamAdapterProducer) openStream(ctx context.Context) (io.ReadClos
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			return nil, fmt.Errorf("failed to close response body: %s", err.Error())
+		}
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 

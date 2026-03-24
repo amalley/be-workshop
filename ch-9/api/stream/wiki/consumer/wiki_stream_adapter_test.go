@@ -130,7 +130,11 @@ func TestWikiStreamAdapterConsumer(t *testing.T) {
 	if err := adapter.Connect(ctx); err != nil {
 		t.Fatalf("failed to connect: %v", err)
 	}
-	defer adapter.Close(ctx)
+	defer func() {
+		if err := adapter.Close(ctx); err != nil {
+			t.Fatalf("failed to close adapter: %v", err)
+		}
+	}()
 
 	consumeCtx, consumeCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer consumeCancel()

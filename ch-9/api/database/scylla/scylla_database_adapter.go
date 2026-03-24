@@ -58,10 +58,10 @@ func NewScyllaDatabaseAdapter(opts ...ScyllaOption) *ScyllaDatabaseAdapter {
 
 func (s *ScyllaDatabaseAdapter) Connect(ctx context.Context) error {
 	if s.cfg.Host == "" {
-		return errors.New("No Scylla host provided")
+		return errors.New("no Scylla host provided")
 	}
 	if s.cfg.Keyspace == "" {
-		return errors.New("No Scylla keyspace provided")
+		return errors.New("no Scylla keyspace provided")
 	}
 
 	if err := s.tryConnent(ctx); err != nil {

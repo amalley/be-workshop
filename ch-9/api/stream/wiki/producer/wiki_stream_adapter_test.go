@@ -39,7 +39,9 @@ func (m *MockStream) Do(req *http.Request) (*http.Response, error) {
 		for {
 			select {
 			case <-req.Context().Done():
-				w.Close()
+				if err := w.Close(); err != nil {
+					return
+				}
 				return
 			default:
 				// Write an event to the pipe
