@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}
+  namespace: wikistats
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Chart.Name }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          {{- with .Values.wikistatsConsumer.image }}
+          image: {{ .image }}
+          imagePullPolicy: {{ .pullPolicy }}
+          {{- end }}
+          {{- with .Values.wikistatsConsumer.resources }}
+          resources:
+            limits:
+              cpu: {{ .limits.cpu }}
+              memory: {{ .limits.memory }}
+            requests:
+              cpu: {{ .requests.cpu }}
+              memory: {{ .requests.memory }}
+          {{- end }}     
+          {{- with .Values.wikistatsConsumer.env }}
+          env:
+          {{- range . }}
+            - name: "{{ .name }}"
+              value: "{{ .value }}"
+          {{- end }}
+          {{- end }}

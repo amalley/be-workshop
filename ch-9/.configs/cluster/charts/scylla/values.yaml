@@ -1,0 +1,14 @@
+scylla:
+  image: scylladb/scylla:2026.1
+  ports:
+    - name: cql
+      port: 9042
+    - name: metrics
+      port: 9180
+  resources:
+    limits:
+      cpu: 1
+      memory: 2Gi
+    requests:
+      cpu: 1
+      memory: 2Gi

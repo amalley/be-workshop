@@ -1,0 +1,22 @@
+kube-prometheus-stack:
+  prometheus:
+    prometheusSpec:
+      serviceMonitorNamespaceSelector:
+        matchLabels:
+          release: monitoring
+      serviceMonitorSelectorNilUsesHelmValues: false
+      serviceMonitorSelector: {}
+      retention: 1d 
+      resources:
+        requests:
+          memory: 512Mi
+  grafana:
+    adminPassword: admin 
+    sidecar:
+      dataSources:
+        enabled: true
+        label: grafana_datasource
+        labelValue: "1"
+      dashboards:
+        enabled: true
+        label: grafana_dashboard

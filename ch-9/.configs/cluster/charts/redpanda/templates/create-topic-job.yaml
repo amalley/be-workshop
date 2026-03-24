@@ -1,0 +1,13 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-wikistats-topic
+  namespace: wikistats
+spec:
+  template:
+    spec:
+      containers:
+      - name: rpk
+        image: docker.redpanda.com/redpandadata/redpanda:latest
+        command: ["rpk", "topic", "create", "wikistats", "--brokers", "redpanda-0.redpanda.wikistats.svc.cluster.local:9093"]
+      restartPolicy: OnFailure

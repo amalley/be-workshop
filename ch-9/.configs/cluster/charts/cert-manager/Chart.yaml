@@ -1,0 +1,8 @@
+apiVersion: v2
+name: cert-manager-wrapper
+description: A Helm chart for deploying cert-manager in a Kubernetes cluster
+version: 0.1.0
+dependencies:
+  - name: cert-manager
+    version: 1.20.0
+    repository: "https://charts.jetstack.io"

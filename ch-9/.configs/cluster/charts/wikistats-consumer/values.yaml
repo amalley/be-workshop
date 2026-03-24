@@ -1,0 +1,26 @@
+wikistatsConsumer:
+  image:
+    image: "wikistats-consumer:v1"
+    pullPolicy: "Never"
+  resources:
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+    requests:
+      cpu: "250m"
+      memory: "128Mi"
+  env:
+    - name: DB_HOST
+      value: "scylla"
+    - name: DB_KEYSPACE
+      value: "wikistats"
+    - name: KAFKA_BROKERS
+      value: "redpanda-0.redpanda.wikistats.svc.cluster.local:9093"
+    - name: KAFKA_TOPIC
+      value: "wikistats"
+    - name: KAFKA_CONSUMER_GROUP_ID
+      value: "wikistats-consumers"
+    - name: KAFKA_RETRY_ATTEMPTS
+      value: "5"
+    - name: KAFKA_MAX_POLL_RECORDS
+      value: "100"

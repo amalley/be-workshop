@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package wiki;
+
+import "google/protobuf/struct.proto";
+
+option go_package = "./gen/pbwiki";
+
+message WikiStreamMessage {
+  string schema = 1 [json_name = "$schema"];
+  Meta meta = 2;
+  
+  optional int64 id = 3;
+  string type = 4;
+  string title = 5;
+  string user = 6;
+  string comment = 7;
+  int64 timestamp = 8;
+  int32 namespace = 9;
+  bool bot = 10;
+  
+  string server_url = 11;
+  string server_name = 12;
+  string server_script_path = 13;
+  string wiki = 14;
+  
+  string parsed_comment = 15 [json_name = "parsedcomment"];
+  
+  optional bool minor = 16;
+  optional bool patrolled = 17;
+  
+  Length length = 18;
+  Revision revision = 19;
+
+  optional string log_type = 20;
+  optional string log_action = 21;
+  optional string log_action_comment = 22;
+  optional int64 log_id = 23;
+  optional google.protobuf.Value log_params = 24 [json_name = "log_params"];
+}
+
+message Meta {
+  string stream = 1;
+  string dt = 2; 
+  optional string id = 3;
+  optional string request_id = 4;
+  optional string uri = 5;
+  optional string domain = 6;
+  optional int32 partition = 7;
+  optional int64 offset = 8;
+}
+
+message Length {
+  optional int32 old = 1;
+  optional int32 new = 2;
+}
+
+message Revision {
+  optional int64 old = 1;
+  optional int64 new = 2;
+}
