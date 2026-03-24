@@ -50,4 +50,4 @@ jobs:
 
       - name: Build Docker image
         working-directory: ${{ env.WORKING_DIR }}
-        run: docker build -t wikistats:latest .
+        run: docker build -t wikistats:latest -f test.dockerfile .
