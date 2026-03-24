@@ -1,0 +1,8 @@
+apiVersion: v2
+name: redpanda-wrapper
+description: A Helm chart for deploying Redpanda and its associated services in a Kubernetes cluster
+version: 0.1.0
+dependencies:
+  - name: redpanda
+    version: 25.3.2
+    repository: "https://charts.redpanda.com/"

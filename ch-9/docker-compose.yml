@@ -103,7 +103,7 @@ services:
     container_name: wikistats-producer
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: producer.dockerfile
     command: ["./wikistats-producer"]
     env_file:
       - .env
@@ -126,7 +126,7 @@ services:
     container_name: wikistats-consumer
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: consumer.dockerfile
     command: ["./wikistats-consumer"]
     env_file:
       - .env

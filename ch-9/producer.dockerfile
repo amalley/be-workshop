@@ -17,8 +17,7 @@ RUN go mod download
 COPY . .
 
 # Finally build our application
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /wikistats-consumer ./cmd/consumer/main.go && \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /wikistats-producer ./cmd/producer/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /wikistats-producer ./cmd/producer/main.go
 
 # Stage 2: Build the minimal runtime image
 FROM alpine:latest
@@ -27,8 +26,7 @@ FROM alpine:latest
 WORKDIR /app
 
 # Copy the binary from build stage
-COPY --from=builder /wikistats-consumer ./wikistats-consumer
 COPY --from=builder /wikistats-producer ./wikistats-producer
 
 # Default command to run the application
-CMD ["/app/wikistats-consumer"]
+CMD ["/app/wikistats-producer"]

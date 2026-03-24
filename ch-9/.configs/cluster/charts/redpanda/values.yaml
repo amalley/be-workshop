@@ -1,0 +1,16 @@
+redpanda:
+  listeners:
+    kafka:
+      port: 9093
+      authenticationMethod: ~
+      tls:
+        enabled: false
+        requireClientAuth: false
+  resources:
+    cpu:
+      cores: 1
+    memory:
+      container:
+        max: 1.5Gi  
+  statefulset:
+    replicas: 1

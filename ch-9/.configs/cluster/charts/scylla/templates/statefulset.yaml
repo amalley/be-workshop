@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: scylla
+  namespace: wikistats
+spec:
+  serviceName: scylla
+  replicas: 1
+  selector:
+    matchLabels:
+        app: scylla
+  template:
+    metadata:
+      labels:
+          app: scylla
+    spec:
+      containers:
+        - name: scylla
+          image: {{ .Values.scylla.image }}
+          args:
+            - "--developer-mode=1"
+            - "--smp=1"
+            - "--memory=400M" 
+            - "--overprovisioned=1"
+          ports:
+          {{- range .Values.scylla.ports }}
+            - name: {{ .name }}
+              containerPort: {{ .port }}
+          {{- end }}
+          resources:
+          {{- toYaml .Values.scylla.resources | nindent 12 }}
+          volumeMounts:
+            - name: scylla-data
+              mountPath: /var/lib/scylla
+  volumeClaimTemplates:
+    - metadata:
+        name: scylla-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

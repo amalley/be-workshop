@@ -1,0 +1,18 @@
+wikistatsProducer:
+  image:
+    image: "wikistats-producer:v1"
+    pullPolicy: "Never"
+  resources:
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+    requests:
+      cpu: "250m"
+      memory: "128Mi"
+  env:
+    - name: STREAM_URL
+      value: "https://stream.wikimedia.org/v2/stream/recentchange"
+    - name: KAFKA_BROKERS
+      value: "redpanda-0.redpanda.wikistats.svc.cluster.local:9093"
+    - name: KAFKA_TOPIC
+      value: "wikistats"
